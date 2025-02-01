@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dbframe"
+authors = [{ name = "randomseed42", email = "randomseed42@protonmail.com" }]
+description = "Python package to simplify CRUD operations between pandas dataframe and SQL databases."
+readme = "README.md"
+dependencies = ["pandas", "psycopg2", "SQLAlchemy"]
+requires-python = ">=3.10"
+classifiers = [
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Operating System :: OS Independent",
+]
+license = { file = "LICENSE" }
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://github.com/randomseed42/dbframe"
+Issues = "https://github.com/randomseed42/dbframe/issues"
+
+[tool.setuptools.dynamic]
+version = { attr = "dbframe.__version__" }
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.ruff.lint.isort]
+lines-after-imports = 2
