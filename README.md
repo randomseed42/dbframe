@@ -1,2 +1,2 @@
 # dbframe
-Python package to simplify CRUD operations between pandas dataframe and SQL databases.
+Python package to simplify CRUD operations between SQL databases and pandas dataframe.
