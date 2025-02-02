@@ -1,9 +1,11 @@
 import os
-from urllib.parse import quote_plus, unquote_plus
+from urllib.parse import quote_plus
 
-import pandas as pd
-import psycopg2
 from sqlalchemy import create_engine, text
+
+from .logger import Logger
+
+logger = Logger('PG_Logger').get_logger()
 
 
 class PGHandler:
@@ -27,6 +29,7 @@ class PGHandler:
             executemany_mode='values_plus_batch',
             isolation_level='AUTOCOMMIT',
         )
+        self._validate_connection()
 
     def _generate_url(self, dbname: str):
         url_template = 'postgresql+psycopg2://{}:{}@{}:{}/{}'
@@ -36,11 +39,10 @@ class PGHandler:
         try:
             with self.engine.connect() as conn:
                 conn.execute(text('SELECT 1'))
-                print('Connection successful')
-            return True
+                logger.info('Connection successful')
         except Exception as err:
-            print(err)
-            return False
+            logger.error(str(err))
+            raise ValueError(f'Connection failed: {self.host=} {self.port=} {self.user=} {self.dbname=}')
 
     def select(self):
         print(f'postgres {self.url} select')
