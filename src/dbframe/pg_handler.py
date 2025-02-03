@@ -1,7 +1,8 @@
 import os
+from typing import Literal
 from urllib.parse import quote_plus
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, MetaData, Table, Column, String, Integer
 
 from .logger import Logger
 
@@ -44,12 +45,14 @@ class PGHandler:
             logger.error(str(err))
             raise ValueError(f'Connection failed: {self.host=} {self.port=} {self.user=} {self.dbname=}')
 
-    def select(self):
-        print(f'postgres {self.url} select')
-
-    def insert(self):
-        print(f'postgres {self.url} insert')
-
+    def get_databases(self):
+        stmt = text('SELECT datname FROM pg_catalog.pg_database;')
+        engine = create_engine(self.url_default)
+        with engine.connect() as conn:
+            cur = conn.execute(stmt)
+            rows = cur.fetchall()
+            databases = [row[0] for row in rows]
+            return databases
 
 class PGDFHandler(PGHandler):
     def __init__(

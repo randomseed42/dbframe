@@ -22,7 +22,11 @@ class Logger:
         self.logger = logging.getLogger(name)
         self.logger.setLevel(log_level)
 
-        formatter = logging.Formatter('%(asctime)s | %(name)s | %(levelname)s | %(filename)s:%(lineno)d | %(message)s')
+        formatter = logging.Formatter(
+            '{asctime} | {name} | {levelname:<8} | {filename}:{lineno} | {message}',
+            datefmt='%Y-%m-%d %H:%M:%S',
+            style='{',
+        )
 
         if log_console:
             ch = logging.StreamHandler()
