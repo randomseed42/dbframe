@@ -16,8 +16,8 @@ class Logger:
         return cls._instances[key]
 
     def _setup_logger(self, name: str, log_level: str, log_console: bool, log_file: str = None):
-        log_level = log_level or os.getenv('LOG_LEVEL', 'INFO').upper()
-        log_level = getattr(logging, log_level, logging.INFO)
+        log_level = log_level or os.getenv('LOG_LEVEL', 'WARNING').upper()
+        log_level = getattr(logging, log_level, logging.WARNING)
 
         self.logger = logging.getLogger(name)
         self.logger.setLevel(log_level)
