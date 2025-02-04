@@ -17,12 +17,24 @@ class PGHandler:
             user: str = None,
             password: str = None,
             dbname: str = None,
+            log_name: str = 'Logger',
+            log_level: str = None,
+            log_console: bool = False,
+            log_file: str = None,
     ):
         self.host = host or os.getenv('PG_HOST', '127.0.0.1')
         self.port = str(port or os.getenv('PG_PORT', '5432'))
         self.user = user or os.getenv('PG_USER', 'postgres')
         self.password = quote_plus(password or os.getenv('PG_PASS', 'postgres'))
         self.dbname = dbname or os.getenv('PG_DBNAME', 'postgres')
+        self.logger = Logger(
+            log_name=log_name,
+            log_level=log_level,
+            log_console=log_console,
+            log_file=log_file,
+        ).get_logger()
+        self.logger.critical(f'logger initialized {self.logger.name=} {id(self.logger)=}')
+
         self.url = self._generate_url(dbname=self.dbname)
         self.url_default = self._generate_url(dbname='postgres')
         self.engine = create_engine(
@@ -62,6 +74,10 @@ class PGDFHandler(PGHandler):
             user: str = None,
             password: str = None,
             dbname: str = None,
+            log_name: str = 'Logger',
+            log_level: str = None,
+            log_console: bool = False,
+            log_file: str = None,
     ):
         super().__init__(
             host=host,
@@ -69,4 +85,8 @@ class PGDFHandler(PGHandler):
             user=user,
             password=password,
             dbname=dbname,
+            log_name=log_name,
+            log_level=log_level,
+            log_console=log_console,
+            log_file=log_file,
         )

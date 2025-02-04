@@ -7,7 +7,7 @@ name = "dbframe"
 authors = [{ name = "randomseed42", email = "randomseed42@protonmail.com" }]
 description = "Python package to simplify CRUD operations between pandas dataframe and SQL databases."
 readme = "README.md"
-dependencies = ["pandas", "psycopg2", "SQLAlchemy"]
+dependencies = ["alembic", "pandas", "psycopg2", "SQLAlchemy"]
 requires-python = ">=3.10"
 classifiers = [
   "Programming Language :: Python :: 3.10",
