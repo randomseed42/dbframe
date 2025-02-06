@@ -1,8 +1,7 @@
 import os
-from typing import Literal
 from urllib.parse import quote_plus
 
-from sqlalchemy import create_engine, text, MetaData, Table, Column, String, Integer
+from sqlalchemy import create_engine, text
 
 from .logger import Logger
 
@@ -65,6 +64,7 @@ class PGHandler:
             rows = cur.fetchall()
             databases = [row[0] for row in rows]
             return databases
+
 
 class PGDFHandler(PGHandler):
     def __init__(
