@@ -8,7 +8,7 @@ from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.exc import NoSuchTableError
 
 from .logger import Logger
-from .utils import WhereClause, OrderByClause, where_clauses_parser, order_by_parser
+from .utils import WhereClause, OrderByClause, where_clauses_parser, order_by_parser, NamingValidator
 
 
 class SQLiteHandler:
@@ -60,7 +60,7 @@ class SQLiteHandler:
     def get_table(self, table_name: str, **kwargs) -> Table | None:
         metadata = MetaData()
         try:
-            table = Table(table_name, metadata, autoload_with=self.engine, **kwargs, )
+            table = Table(table_name, metadata, autoload_with=self.engine, **kwargs)
             return table
         except NoSuchTableError:
             self.logger.info(f'Table {table_name} not found')
@@ -68,8 +68,7 @@ class SQLiteHandler:
 
     def create_table(self, table_name: str, columns: list[Column], **kwargs) -> Table | None:
         if self.get_table(table_name) is not None:
-            self.logger.warning(f'Table {table_name} already exists')
-            return self.get_table(table_name, **kwargs)
+            raise ValueError(f'Table {table_name} already exists')
         metadata = MetaData()
         table = Table(table_name, metadata, *columns, **kwargs)
         table.create(bind=self.engine, checkfirst=True)
@@ -78,9 +77,23 @@ class SQLiteHandler:
 
     def drop_table(self, table_name: str, **kwargs):
         table = self.get_table(table_name, **kwargs)
-        if table is not None:
-            table.drop(bind=self.engine, checkfirst=True)
-            self.logger.info(f'Table {table_name} dropped')
+        if table is None:
+            self.logger.warning(f'Table {table_name} does not exists')
+            return
+        table.drop(bind=self.engine, checkfirst=True)
+        self.logger.info(f'Table {table_name} dropped')
+
+    def rename_table(self, old_table_name: str, new_table_name: str, **kwargs):
+        old_table_name = NamingValidator.table(old_table_name)
+        if self.get_table(table_name=old_table_name, **kwargs) is None:
+            raise ValueError(f'Old table {old_table_name} does not exist')
+        new_table_name = NamingValidator.table(new_table_name)
+        if self.get_table(table_name=new_table_name, **kwargs) is not None:
+            raise ValueError(f'New table {new_table_name} already exists')
+        with self.engine.connect() as conn:
+            stmt = text(f'ALTER TABLE {old_table_name} RENAME TO {new_table_name};')
+            conn.execute(stmt)
+            self.logger.info(f'Old table {old_table_name} has been renamed to {new_table_name}')
 
     def get_column(self, table_name: str, column: str, **kwargs) -> Column | None:
         table = self.get_table(table_name, **kwargs)
