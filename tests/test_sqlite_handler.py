@@ -5,7 +5,7 @@ from logging import FileHandler
 
 from dbframe import SQLiteDFHandler
 from dbframe.utils import WhereClause, OrderByClause
-from sqlalchemy import Column, INTEGER, TEXT, DATETIME
+from sqlalchemy import Column, INTEGER, TEXT, TIMESTAMP
 
 
 class TestSQLiteHandler(unittest.TestCase):
@@ -21,19 +21,19 @@ class TestSQLiteHandler(unittest.TestCase):
         return [
             Column('uid', INTEGER()),
             Column('user', TEXT()),
-            Column('register_datetime', DATETIME()),
+            Column('register_datetime', TIMESTAMP()),
         ]
 
     @classmethod
     def _create_table(cls):
         cls.table_name = 'users'
         cls.columns = cls._generate_columns()
-        cls.db.create_table(table_name=cls.table_name, columns=cls.columns)
         rows = [
             dict(uid=0, user='user1', register_datetime=datetime(2020, 1, 1, 0, 0, 0)),
             dict(uid=1, user='user2', register_datetime=datetime(2020, 1, 2, 0, 0, 0)),
             dict(uid=2, user='user3', register_datetime=datetime(2020, 1, 3, 0, 0, 0)),
         ]
+        cls.db.create_table(table_name=cls.table_name, columns=cls.columns)
         cls.db.insert_rows(table_name=cls.table_name, rows=rows, on_conflict='do_nothing')
 
     @classmethod
@@ -73,12 +73,21 @@ class TestSQLiteHandler(unittest.TestCase):
         columns = self.db.get_columns(table_name=self.table_name)
         self.assertTrue(set(col.name for col in self.columns).issubset(columns.keys()))
 
-    def test_db_create_drop_table(self):
-        name = 'users2'
-        table = self.db.create_table(table_name=name, columns=self._generate_columns())
-        self.assertEqual(table.name, name)
-        self.db.drop_table(table_name=name)
-        self.assertIsNone(self.db.get_table(table_name=name))
+    def test_db_create_rename_drop_table(self):
+        temp_table = 'temp_table'
+        table = self.db.create_table(table_name=temp_table, columns=self._generate_columns())
+        self.assertEqual(table.name, temp_table)
+
+        new_temp_table = 'new_temp_table'
+        self.db.rename_table(old_table_name=temp_table, new_table_name=new_temp_table)
+        self.assertTrue(self.db.get_table(table_name=temp_table) is None)
+        self.assertTrue(self.db.get_table(table_name=new_temp_table) is not None)
+
+        self.db.drop_table(table_name=new_temp_table)
+        self.assertIsNone(self.db.get_table(table_name=new_temp_table))
+
+        with self.assertRaisesRegex(ValueError, 'Table.*already exists.*'):
+            self.db.create_table(table_name='users', columns=self._generate_columns())
 
     def test_db_add_column(self):
         new_column = Column('age', INTEGER())
@@ -192,6 +201,11 @@ class TestSQLiteHandler(unittest.TestCase):
         self.assertEqual(len(rows), 2)
 
         where_clauses = (WhereClause('uid', 'between', (0, 2)), WhereClause('uid', '>', 3))
+        cols, rows = self.db.select_rows(self.table_name, ['uid', 'user', 'email'], where_clauses=where_clauses)
+        self.assertEqual(cols, ['uid', 'user'])
+        self.assertEqual(len(rows), 4)
+
+        where_clauses = (WhereClause('user', 'like', 'User1'), WhereClause('user', 'ilike', 'User2'), WhereClause('user', 'ilike', 'user3'), WhereClause('user', 'ilike', '%SER4'))
         cols, rows = self.db.select_rows(self.table_name, ['uid', 'user', 'email'], where_clauses=where_clauses)
         self.assertEqual(cols, ['uid', 'user'])
         self.assertEqual(len(rows), 4)

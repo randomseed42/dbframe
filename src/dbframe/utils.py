@@ -1,3 +1,4 @@
+import re
 from typing import Literal, NamedTuple, Sequence
 
 from sqlalchemy import and_, or_, Table, true, Column
@@ -91,3 +92,29 @@ def order_by_parser(order_by: list[OrderByClause] | None, columns: dict[str, Col
         else:
             orders.append(columns.get(order.column_name).desc())
     return orders
+
+
+class NamingValidator:
+    @classmethod
+    def dbname(cls, name: str) -> str:
+        if not re.match('^[a-zA-Z][a-zA-Z0-9_]*$', name):
+            raise ValueError(f'The dbname {name} is invalid')
+        return name.lower()
+
+    @classmethod
+    def schema(cls, name: str) -> str:
+        if not re.match('^[a-zA-Z][a-zA-Z0-9_]*$', name):
+            raise ValueError(f'The schema {name} is invalid')
+        return name.lower()
+
+    @classmethod
+    def table(cls, name: str) -> str:
+        if not re.match('^[a-zA-Z][a-zA-Z0-9_]*$', name):
+            raise ValueError(f'The table {name} is invalid')
+        return name.lower()
+
+    @classmethod
+    def column_name(cls, name: str):
+        if not re.match('^[a-zA-Z_][a-zA-Z0-9_]*$', name):
+            raise ValueError(f'The column_name {name} is invalid')
+        return name.lower()
