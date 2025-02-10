@@ -27,7 +27,6 @@ class TestPGHandler(unittest.TestCase):
 
     @classmethod
     def _create_table(cls):
-        cls.table_name = 'users'
         cls.columns = cls._generate_columns()
         rows = [
             dict(uid=0, user='user1', register_datetime=datetime(2020, 1, 1, 0, 0, 0)),
@@ -35,7 +34,7 @@ class TestPGHandler(unittest.TestCase):
             dict(uid=2, user='user3', register_datetime=datetime(2020, 1, 3, 0, 0, 0)),
         ]
         cls.db.create_table(table_name=cls.table_name, columns=cls.columns, schema=cls.schema)
-        # cls.db.insert_rows(table_name=cls.table_name, rows=rows, on_conflict='do_nothing')
+        cls.db.insert_rows(table_name=cls.table_name, rows=rows, on_conflict='do_nothing')
 
     @classmethod
     def setUpClass(cls):
@@ -136,6 +135,52 @@ class TestPGHandler(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, 'Table.*already exists.*'):
             self.db.create_table(table_name='users', columns=self._generate_columns(), schema=self.schema)
+
+    def test_db_get_column(self):
+        column = self.db.get_column(table_name=self.table_name, column_name='user', schema=self.schema)
+        self.assertEqual(column.name, 'user')
+        column2 = self.db.get_column(table_name=self.table_name, column_name='user2', schema=self.schema)
+        self.assertEqual(column2, None)
+
+    def test_db_get_columns(self):
+        columns = self.db.get_columns(table_name=self.table_name, schema=self.schema)
+        self.assertTrue(set(col.name for col in self.columns).issubset(columns.keys()))
+
+    def test_db_add_column(self):
+        new_column = Column('age', INTEGER())
+        self.db.add_column(table_name=self.table_name, column=new_column, schema=self.schema)
+        self.assertTrue('age' in self.db.get_columns(table_name=self.table_name, schema=self.schema))
+
+    def test_db_add_columns(self):
+        columns_to_add = [
+            Column('uid', INTEGER()),
+            Column('first_name', TEXT()),
+            Column('last_name', TEXT()),
+        ]
+        self.db.add_columns(table_name=self.table_name, columns=columns_to_add, schema=self.schema)
+        current_columns = self.db.get_columns(table_name=self.table_name, schema=self.schema)
+        self.assertTrue('first_name' in current_columns and 'last_name' in current_columns)
+
+    def test_db_drop_column(self):
+        new_column = Column('email', TEXT())
+        self.db.add_column(table_name=self.table_name, column=new_column, schema=self.schema)
+        current_columns = self.db.get_columns(table_name=self.table_name, schema=self.schema)
+        self.assertTrue('email' in current_columns)
+        self.db.drop_column(table_name=self.table_name, column_name='email', schema=self.schema)
+        current_columns = self.db.get_columns(table_name=self.table_name, schema=self.schema)
+        self.assertTrue('email' not in current_columns)
+
+    def test_db_drop_columns(self):
+        new_columns = [
+            Column('password', TEXT()),
+            Column('role', TEXT()),
+        ]
+        self.db.add_columns(table_name=self.table_name, columns=new_columns, schema=self.schema)
+        current_columns = self.db.get_columns(table_name=self.table_name, schema=self.schema)
+        self.assertTrue('password' in current_columns and 'role' in current_columns)
+        self.db.drop_columns(table_name=self.table_name, column_names=['password', 'role'], schema=self.schema)
+        current_columns = self.db.get_columns(table_name=self.table_name, schema=self.schema)
+        self.assertTrue('password' not in current_columns and 'role' not in current_columns)
 
 
 if __name__ == '__main__':
