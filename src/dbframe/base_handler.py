@@ -51,11 +51,11 @@ class BaseHandler:
     def get_schemas(self) -> list[str]:
         ...
 
-    def drop_schema(self, schema: str) -> str | None:
+    def drop_schema(self, schema: str, cascade: bool = False) -> str | None:
         ...
 
     # Table CRUD
-    def create_table(self, table_name: str, columns: list[Column], schema: str, **kwargs) -> Table | None:
+    def create_table(self, table_name: str, schema: str, columns: list[Column], **kwargs) -> Table | None:
         ...
 
     def get_table(self, table_name: str, schema: str, **kwargs) -> Table | None:
@@ -71,48 +71,53 @@ class BaseHandler:
         ...
 
     # Column CRUD
-    def add_column(self, table_name: str, column: Column, schema: str, **kwargs) -> str | None:
+    def add_column(self, table_name: str, schema: str, column: Column, **kwargs) -> str | None:
         ...
 
-    def add_columns(self, table_name: str, columns: list[Column], schema: str, **kwargs) -> list[str] | None:
+    def add_columns(self, table_name: str, schema: str, columns: list[Column], **kwargs) -> list[str] | None:
         ...
 
-    def get_column(self, table_name: str, column_name: str, schema: str, **kwargs) -> Column | None:
+    def get_column(self, table_name: str, schema: str, column_name: str, **kwargs) -> Column | None:
         ...
 
     def get_columns(self, table_name: str, schema: str, **kwargs) -> dict[str, Column] | None:
         ...
 
-    def alter_column(self, table_name: str, column: str, new_column_name: str, schema: str, **kwargs) -> str | None:
+    def alter_column(self, table_name: str, schema: str, column: str, new_column_name: str, **kwargs) -> str | None:
         ...
 
-    def drop_column(self, table_name: str, column_name: str, schema: str, **kwargs) -> str | None:
+    def drop_column(self, table_name: str, schema: str, column_name: str, **kwargs) -> str | None:
         ...
 
-    def drop_columns(self, table_name: str, column_names: list[str], schema: str, **kwargs) -> list[str] | None:
+    def drop_columns(self, table_name: str, schema: str, column_names: list[str], **kwargs) -> list[str] | None:
         ...
 
     # Index CRUD
-    def create_index(self, table_name: str, column_names: list[str], **kwargs) -> str | None:
+    def create_index(self, table_name: str, schema: str, column_names: list[str], **kwargs) -> str | None:
         ...
 
-    def get_indexes(self, table_name: str, **kwargs) -> dict[str, list[str]] | None:
+    def get_indexes(self, table_name: str, schema: str, **kwargs) -> dict[str, list[str]] | None:
         ...
 
-    def drop_index(self, table_name: str, column_names: list[str], **kwargs) -> str | None:
+    def drop_index(self, table_name: str, schema: str, column_names: list[str], **kwargs) -> str | None:
         ...
 
     # Rows CRUD
-    def insert_rows(self, table_name: str, rows: list[dict], on_conflict: Literal['do_nothing'] = None, **kwargs) -> int | None:
+    def insert_rows(self, table_name: str, schema: str, rows: list[dict], on_conflict: Literal['do_nothing'] = None,
+                    **kwargs) -> int | None:
         ...
 
-    def select_rows(self, table_name: str, column_names: list[str] = None, where_clauses: list | tuple | WhereClause = None, order_by: list[OrderByClause] = None, offset: int = None, limit: int = None, **kwargs) -> tuple[list, list[Row]] | tuple[None, None]:
+    def select_rows(self, table_name: str, schema: str, column_names: list[str] = None,
+                    where_clauses: list | tuple | WhereClause = None, order_by: list[OrderByClause] = None,
+                    offset: int = None, limit: int = None, **kwargs) -> tuple[list, list[Row]] | tuple[None, None]:
         ...
 
-    def update_rows(self, table_name: str, set_clauses: dict[str, Any], where_clauses: list | tuple | WhereClause = None, **kwargs) -> int | None:
+    def update_rows(self, table_name: str, schema: str, set_clauses: dict[str, Any],
+                    where_clauses: list | tuple | WhereClause = None, **kwargs) -> int | None:
         ...
 
-    def delete_rows(self, table_name: str, where_clauses: list | tuple | WhereClause = None, **kwargs) -> int | None:
+    def delete_rows(self, table_name: str, schema: str, where_clauses: list | tuple | WhereClause = None,
+                    **kwargs) -> int | None:
         ...
 
     # Execute SQL

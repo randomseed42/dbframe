@@ -185,11 +185,11 @@ class SQLiteHandler(BaseHandler):
         columns = {k: v for k, v in table.columns.items()}
         return columns
 
-    def alter_column(self, table_name: str, column_name: str, new_column_name: str, **kwargs) -> str | None:
+    def alter_column(self, table_name: str, old_column_name: str, new_column_name: str, **kwargs) -> str | None:
         table = self.get_table(table_name=table_name, **kwargs)
         if table is None:
             return None
-        old_column = self.get_column(table_name, column_name=column_name, **kwargs)
+        old_column = self.get_column(table_name, column_name=old_column_name, **kwargs)
         if old_column is None:
             return None
         new_column_name = NamingValidator.column(new_column_name)
@@ -197,7 +197,7 @@ class SQLiteHandler(BaseHandler):
             ctx = MigrationContext.configure(conn)
             op = Operations(ctx)
             op.alter_column(table_name, column_name=old_column.name, new_column_name=new_column_name, **kwargs)
-            self.logger.info(f'Altered column {old_column.name=} to {new_column_name=} in table {table.name}')
+            self.logger.info(f'Altered column {old_column.name} to {new_column_name} in table {table.name}')
             return new_column_name
 
     def drop_column(self, table_name: str, column_name: str, **kwargs) -> str | None:
@@ -292,8 +292,10 @@ class SQLiteHandler(BaseHandler):
             return idx_name
 
     # Rows CRUD
-    def insert_rows(self, table_name: str, rows: list[dict], on_conflict: Literal['do_nothing'] = None, **kwargs) -> int | None:
+    def insert_rows(self, table_name: str, rows: list[dict], on_conflict: Literal['do_nothing'] = None,
+                    **kwargs) -> int | None:
         table = self.get_table(table_name, **kwargs)
+        table_name = NamingValidator.table(table_name)
         if table is None:
             raise ValueError(f'Table {table_name} not found')
         if len(rows) == 0:
@@ -305,15 +307,18 @@ class SQLiteHandler(BaseHandler):
             else:
                 cur = conn.execute(table.insert(), rows)
             rowcount = cur.rowcount if isinstance(cur.rowcount, int) else cur.rowcount()
-            self.logger.info(f'Inserted {rowcount} rows')
+            self.logger.info(f'Inserted {rowcount} rows to table {table_name}')
             return rowcount
 
-    def select_rows(self, table_name: str, column_names: list[str] = None, where_clauses: list | tuple | WhereClause = None, order_by: list[OrderByClause] = None, offset: int = None, limit: int = None, **kwargs) -> tuple[list, list[Row]] | tuple[None, None]:
-        table = self.get_table(table_name, **kwargs)
+    def select_rows(self, table_name: str, column_names: list[str] = None,
+                    where_clauses: list | tuple | WhereClause = None, order_by: list[OrderByClause] = None,
+                    offset: int = None, limit: int = None, **kwargs) -> tuple[list, list[Row]] | tuple[None, None]:
+        table_name = NamingValidator.table(table_name)
+        table = self.get_table(table_name=table_name, **kwargs)
         if table is None:
             raise ValueError(f'Table {table_name} not found')
 
-        current_columns = self.get_columns(table_name, **kwargs)
+        current_columns = self.get_columns(table_name=table_name, **kwargs)
         if column_names is None:
             selected_columns = current_columns.values()
         else:
@@ -321,7 +326,7 @@ class SQLiteHandler(BaseHandler):
             selected_columns = []
             for column_name in column_names:
                 if column_name not in current_columns:
-                    self.logger.warning(f'Column {column_name} is not in table {table_name}')
+                    self.logger.warning(f'Column {column_name} is not in table {table.name}')
                     continue
                 selected_columns.append(current_columns.get(column_name))
         if len(selected_columns) == 0:
@@ -330,20 +335,21 @@ class SQLiteHandler(BaseHandler):
         where_condition = where_clauses_parser(where_clauses=where_clauses, columns=current_columns)
         orders = order_by_parser(order_by=order_by, columns=current_columns)
 
-        stmt = select(*selected_columns).where(where_condition).order_by(*orders).offset(offset).limit(limit)
-
         with self.engine.connect() as conn:
+            stmt = select(*selected_columns).where(where_condition).order_by(*orders).offset(offset).limit(limit)
             cur = conn.execute(stmt)
             cols = list(cur.keys())
             rows = list(cur.fetchall())
             return cols, rows
 
-    def update_rows(self, table_name: str, set_clauses: dict[str, Any], where_clauses: list | tuple | WhereClause = None, **kwargs) -> int | None:
-        table = self.get_table(table_name, **kwargs)
+    def update_rows(self, table_name: str, set_clauses: dict[str, Any],
+                    where_clauses: list | tuple | WhereClause = None, **kwargs) -> int | None:
+        table_name = NamingValidator.table(table_name)
+        table = self.get_table(table_name=table_name, **kwargs)
         if table is None:
             raise ValueError(f'Table {table_name} not found')
 
-        current_columns = self.get_columns(table_name, **kwargs)
+        current_columns = self.get_columns(table_name=table_name, **kwargs)
         _set_clauses = {}
         for column_name, set_value in set_clauses.items():
             column_name = NamingValidator.column(column_name)
@@ -351,7 +357,7 @@ class SQLiteHandler(BaseHandler):
                 self.logger.warning(f'Column {column_name} is not in {table_name}')
                 continue
             if column_name in _set_clauses:
-                self.logger.warning(f'Column {column_name} is duplicated')
+                self.logger.warning(f'Column {column_name} is duplicated in {table_name}')
                 continue
             _set_clauses[column_name] = set_value
         if len(_set_clauses) == 0:
@@ -359,23 +365,24 @@ class SQLiteHandler(BaseHandler):
             return None
 
         where_condition = where_clauses_parser(where_clauses=where_clauses, table=table)
-        stmt = table.update().where(where_condition)
+
         with self.engine.connect() as conn:
+            stmt = table.update().where(where_condition)
             cur = conn.execute(stmt, _set_clauses)
             rowcount = cur.rowcount if isinstance(cur.rowcount, int) else cur.rowcount()
-            self.logger.info(f'Updated {rowcount} rows')
+            self.logger.info(f'Updated {rowcount} rows in table {table_name}')
             return rowcount
 
     def delete_rows(self, table_name: str, where_clauses: list | tuple | WhereClause = None, **kwargs) -> int | None:
-        table = self.get_table(table_name, **kwargs)
+        table_name = NamingValidator.table(table_name)
+        table = self.get_table(table_name=table_name, **kwargs)
         if table is None:
             raise ValueError(f'Table {table_name} not found')
 
         where_condition = where_clauses_parser(where_clauses=where_clauses, table=table)
 
-        stmt = delete(table).where(where_condition)
-
         with self.engine.connect() as conn:
+            stmt = delete(table).where(where_condition)
             cur = conn.execute(stmt)
             rowcount = cur.rowcount if isinstance(cur.rowcount, int) else cur.rowcount()
             self.logger.info(f'Deleted {rowcount} rows')
@@ -383,8 +390,8 @@ class SQLiteHandler(BaseHandler):
 
     # Execute SQL
     def _execute_sql(self, sql: str, return_result: bool = False) -> tuple[list[str], list[Row]] | None:
-        stmt = text(sql)
         with self.engine.connect() as conn:
+            stmt = text(sql)
             cur = conn.execute(stmt)
             if not return_result:
                 self.logger.info('Execute sql successful')

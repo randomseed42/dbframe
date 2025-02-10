@@ -96,8 +96,9 @@ def order_by_parser(order_by: list[OrderByClause] | None, columns: dict[str, Col
         return [None]
     orders = []
     for order in order_by:
+        column_name = NamingValidator.column(order.column_name)
         if order.ascending:
-            orders.append(columns.get(order.column_name).asc())
+            orders.append(columns.get(column_name).asc())
         else:
             orders.append(columns.get(order.column_name).desc())
     return orders
