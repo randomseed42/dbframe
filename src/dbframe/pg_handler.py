@@ -45,7 +45,7 @@ class PGHandler(BaseHandler):
     def __del__(self):
         self.engine.dispose()
 
-    def _generate_url(self, dbname: str, **kwargs):
+    def _generate_url(self, dbname: str, **kwargs) -> str:
         url_template = 'postgresql+psycopg2://{}:{}@{}:{}/{}'
         return url_template.format(self.user, quote_plus(self.password), self.host, self.port, dbname)
 
@@ -143,12 +143,12 @@ class PGHandler(BaseHandler):
             return schema
 
     # Table CRUD
-    def create_table(self, table_name: str, schema: str, columns: list[Column], **kwargs) -> Table | None:
+    def create_table(self, schema: str, table_name: str, columns: list[Column], **kwargs) -> Table | None:
         schema = self.get_schema(schema=schema)
         if schema is None:
             raise ValueError(f'Schema {schema} does not exist in database {self.dbname}')
         table_name = NamingValidator.table(table_name)
-        if self.get_table(table_name=table_name, schema=schema) is not None:
+        if self.get_table(schema=schema, table_name=table_name) is not None:
             raise ValueError(f'Table {table_name} already exists in schema {schema}')
         if len(columns) == 0:
             raise ValueError(f'Columns {columns} cannot be empty')
@@ -158,9 +158,9 @@ class PGHandler(BaseHandler):
         table = Table(table_name, metadata, *columns, **kwargs)
         table.create(bind=self.engine, checkfirst=True)
         self.logger.info(f'Table {table_name} created in schema {schema}')
-        return self.get_table(table_name=table_name, schema=schema, **kwargs)
+        return self.get_table(schema=schema, table_name=table_name, **kwargs)
 
-    def get_table(self, table_name: str, schema: str, **kwargs) -> Table | None:
+    def get_table(self, schema: str, table_name: str, **kwargs) -> Table | None:
         schema = self.get_schema(schema=schema)
         if schema is None:
             return None
@@ -182,15 +182,15 @@ class PGHandler(BaseHandler):
         tables = metadata.tables
         return tables
 
-    def rename_table(self, old_table_name: str, new_table_name: str, schema: str, **kwargs) -> str | None:
+    def rename_table(self, schema: str, old_table_name: str, new_table_name: str, **kwargs) -> str | None:
         schema = self.get_schema(schema=schema)
         if schema is None:
             return None
         old_table_name = NamingValidator.table(old_table_name)
-        if self.get_table(table_name=old_table_name, schema=schema, **kwargs) is None:
+        if self.get_table(schema=schema, table_name=old_table_name, **kwargs) is None:
             raise ValueError(f'Old table {old_table_name} does not exist in schema {schema}')
         new_table_name = NamingValidator.table(new_table_name)
-        if self.get_table(table_name=new_table_name, schema=schema, **kwargs) is not None:
+        if self.get_table(schema=schema, table_name=new_table_name, **kwargs) is not None:
             raise ValueError(f'New table {new_table_name} already exists in schema {schema}')
         with self.engine.connect() as conn:
             stmt = text(f'ALTER TABLE {schema}.{old_table_name} RENAME TO {new_table_name};')
@@ -198,8 +198,8 @@ class PGHandler(BaseHandler):
             self.logger.info(f'Old table {old_table_name} has been renamed to {new_table_name} in schema {schema}')
             return new_table_name
 
-    def drop_table(self, table_name: str, schema: str, **kwargs) -> str | None:
-        table = self.get_table(table_name=table_name, schema=schema, **kwargs)
+    def drop_table(self, schema: str, table_name: str, **kwargs) -> str | None:
+        table = self.get_table(schema=schema, table_name=table_name, **kwargs)
         if table is None:
             return None
         table.drop(bind=self.engine, checkfirst=True)
@@ -207,12 +207,12 @@ class PGHandler(BaseHandler):
         return table.name
 
     # Column CRUD
-    def add_column(self, table_name: str, schema: str, column: Column, **kwargs) -> str | None:
-        table = self.get_table(table_name=table_name, schema=schema, **kwargs)
+    def add_column(self, schema: str, table_name: str, column: Column, **kwargs) -> str | None:
+        table = self.get_table(schema=schema, table_name=table_name, **kwargs)
         if table is None:
             return None
         column.name = NamingValidator.column(column.name)
-        if self.get_column(table_name=table_name, column_name=column.name, schema=schema, **kwargs) is not None:
+        if self.get_column(schema=schema, table_name=table_name, column_name=column.name, **kwargs) is not None:
             self.logger.warning(f'Column {column.name} already exists in table {table.schema}.{table.name}')
             return None
         with self.engine.connect() as conn:
@@ -222,11 +222,11 @@ class PGHandler(BaseHandler):
             self.logger.info(f'Added column {column.name} to table {table.schema}.{table.name}')
             return column.name
 
-    def add_columns(self, table_name: str, schema: str, columns: list[Column], **kwargs) -> list[str] | None:
-        table = self.get_table(table_name=table_name, schema=schema, **kwargs)
+    def add_columns(self, schema: str, table_name: str, columns: list[Column], **kwargs) -> list[str] | None:
+        table = self.get_table(schema=schema, table_name=table_name, **kwargs)
         if table is None:
             return None
-        current_columns = self.get_columns(table_name=table_name, schema=schema, **kwargs)
+        current_columns = self.get_columns(schema=schema, table_name=table_name, **kwargs)
         new_column_names = []
         with self.engine.connect() as conn:
             ctx = MigrationContext.configure(conn)
@@ -241,8 +241,8 @@ class PGHandler(BaseHandler):
         self.logger.info(f'Added columns {new_column_names} to table {table.schema}.{table.name}')
         return new_column_names
 
-    def get_column(self, table_name: str, schema: str, column_name: str, **kwargs) -> Column | None:
-        table = self.get_table(table_name=table_name, schema=schema, **kwargs)
+    def get_column(self, schema: str, table_name: str, column_name: str, **kwargs) -> Column | None:
+        table = self.get_table(schema=schema, table_name=table_name, **kwargs)
         if table is None:
             return None
         column_name = NamingValidator.column(column_name)
@@ -252,50 +252,49 @@ class PGHandler(BaseHandler):
             return None
         return column
 
-    def get_columns(self, table_name: str, schema: str, **kwargs) -> dict[str, Column] | None:
-        table = self.get_table(table_name=table_name, schema=schema, **kwargs)
+    def get_columns(self, schema: str, table_name: str, **kwargs) -> dict[str, Column] | None:
+        table = self.get_table(schema=schema, table_name=table_name, **kwargs)
         if table is None:
             return None
         columns = {k: v for k, v in table.columns.items()}
         return columns
 
-    def alter_column(self, table_name: str, schema: str, column: str, new_column_name: str, **kwargs) -> str | None:
-        schema = NamingValidator.schema(schema)
-        table = self.get_table(table_name=table_name, schema=schema, **kwargs)
+    def alter_column(self, schema: str, table_name: str, old_column_name: str, new_column_name: str, **kwargs) -> str | None:
+        table = self.get_table(schema=schema, table_name=table_name, **kwargs)
         if table is None:
             return None
-        old_column = self.get_column(table_name, column_name=column, **kwargs)
+        old_column = self.get_column(table_name, column_name=old_column_name, **kwargs)
         if old_column is None:
             return None
         new_column_name = NamingValidator.column(new_column_name)
         with self.engine.connect() as conn:
             ctx = MigrationContext.configure(conn)
             op = Operations(ctx)
-            op.alter_column(table.name, column_name=old_column.name, new_column_name=new_column_name, schema=schema,
+            op.alter_column(table.name, column_name=old_column.name, new_column_name=new_column_name, schema=table.schema,
                             **kwargs)
-            self.logger.info(f'Altered column {column} to {new_column_name=} in table {schema}.{table.name}')
+            self.logger.info(f'Altered column {old_column.name} to {new_column_name} in table {table.schema}.{table.name}')
             return new_column_name
 
-    def drop_column(self, table_name: str, schema: str, column_name: str, **kwargs) -> str | None:
-        table = self.get_table(table_name=table_name, schema=schema, **kwargs)
+    def drop_column(self, schema: str, table_name: str, column_name: str, **kwargs) -> str | None:
+        table = self.get_table(schema=schema, table_name=table_name, **kwargs)
         if table is None:
             return None
         column_name = NamingValidator.column(column_name)
-        if self.get_column(table_name=table_name, column_name=column_name, schema=schema, **kwargs) is None:
+        if self.get_column(schema=schema, table_name=table_name, column_name=column_name, **kwargs) is None:
             self.logger.warning(f'Column {column_name} is not found in table {table.schema}.{table.name}')
             return None
         with self.engine.connect() as conn:
             ctx = MigrationContext.configure(conn)
             op = Operations(ctx)
-            op.drop_column(table_name, column_name, schema=schema, **kwargs)
+            op.drop_column(table_name, column_name, schema=table.schema, **kwargs)
             self.logger.info(f'Dropped column {column_name} from table {table.schema}.{table.name}')
         return column_name
 
-    def drop_columns(self, table_name: str, schema: str, column_names: list[str], **kwargs) -> list[str] | None:
-        table = self.get_table(table_name=table_name, schema=schema, **kwargs)
+    def drop_columns(self, schema: str, table_name: str, column_names: list[str], **kwargs) -> list[str] | None:
+        table = self.get_table(schema=schema, table_name=table_name, **kwargs)
         if table is None:
             return None
-        current_columns = self.get_columns(table_name=table_name, schema=schema, **kwargs)
+        current_columns = self.get_columns(schema=schema, table_name=table_name, **kwargs)
         column_names = map(NamingValidator.column, column_names)
         dropped_column_names = []
         with self.engine.connect() as conn:
@@ -308,17 +307,17 @@ class PGHandler(BaseHandler):
                 if column_name in dropped_column_names:
                     self.logger.warning(f'Column {column_name} is already dropped from table {schema}.{table.name}')
                     continue
-                op.drop_column(table_name, column_name, schema=schema, **kwargs)
+                op.drop_column(table_name, column_name, schema=table.schema, **kwargs)
                 dropped_column_names.append(column_name)
             self.logger.info(f'Dropped columns {dropped_column_names} from table {table.schema}.{table.name}')
         return dropped_column_names
 
     # Index CRUD
-    def create_index(self, table_name: str, schema: str, column_names: list[str], **kwargs) -> str | None:
-        table = self.get_table(table_name=table_name, schema=schema, **kwargs)
+    def create_index(self, schema: str, table_name: str, column_names: list[str], **kwargs) -> str | None:
+        table = self.get_table(schema=schema, table_name=table_name, **kwargs)
         if table is None:
             return None
-        current_columns = self.get_columns(table_name=table_name, schema=schema, **kwargs)
+        current_columns = self.get_columns(schema=schema, table_name=table_name, **kwargs)
         column_names = map(NamingValidator.column, column_names)
         index_column_names = []
         for column_name in column_names:
@@ -328,7 +327,7 @@ class PGHandler(BaseHandler):
                 raise ValueError(f'Column {column_name} is duplicated')
             index_column_names.append(column_name)
         idx_name = 'ix_{}_{}'.format(table_name, '_'.join(index_column_names))
-        if idx_name in self.get_indexes(table_name=table_name, schema=schema, **kwargs):
+        if idx_name in self.get_indexes(schema=schema, table_name=table_name, **kwargs):
             raise ValueError(f'Index {idx_name} already exists')
         with self.engine.connect() as conn:
             ctx = MigrationContext.configure(conn)
@@ -337,18 +336,18 @@ class PGHandler(BaseHandler):
             self.logger.info(f'Create index {idx_name} successful')
             return idx_name
 
-    def get_indexes(self, table_name: str, schema: str, **kwargs) -> dict[str, list[str]] | None:
-        table = self.get_table(table_name=table_name, schema=schema, **kwargs)
+    def get_indexes(self, schema: str, table_name: str, **kwargs) -> dict[str, list[str]] | None:
+        table = self.get_table(schema=schema, table_name=table_name, **kwargs)
         if table is None:
             return None
         indexes = {idx.name: list(idx.columns.keys()) for idx in table.indexes}
         return indexes
 
-    def drop_index(self, table_name: str, schema: str, column_names: list[str], **kwargs) -> str | None:
-        table = self.get_table(table_name=table_name, schema=schema, **kwargs)
+    def drop_index(self, schema: str, table_name: str, column_names: list[str], **kwargs) -> str | None:
+        table = self.get_table(schema=schema, table_name=table_name, **kwargs)
         if table is None:
             return None
-        current_columns = self.get_columns(table_name=table_name, schema=schema, **kwargs)
+        current_columns = self.get_columns(schema=schema, table_name=table_name, **kwargs)
         column_names = map(NamingValidator.column, column_names)
         index_column_names = []
         for column_name in column_names:
@@ -358,7 +357,7 @@ class PGHandler(BaseHandler):
                 raise ValueError(f'Column {column_name} is duplicated')
             index_column_names.append(column_name)
         idx_name = 'ix_{}_{}'.format(table.name, '_'.join(index_column_names))
-        if idx_name not in self.get_indexes(table_name=table_name, schema=schema, **kwargs):
+        if idx_name not in self.get_indexes(schema=schema, table_name=table_name, **kwargs):
             raise ValueError(f'Index {idx_name} does not exist')
         with self.engine.connect() as conn:
             ctx = MigrationContext.configure(conn)
@@ -368,11 +367,11 @@ class PGHandler(BaseHandler):
             return idx_name
 
     # Rows CRUD
-    def insert_rows(self, table_name: str, schema: str, rows: list[dict], on_conflict: Literal['do_nothing'] = None,
+    def insert_rows(self, schema: str, table_name: str, rows: list[dict], on_conflict: Literal['do_nothing'] = None,
                     **kwargs) -> int | None:
         schema = NamingValidator.schema(schema)
         table_name = NamingValidator.table(table_name)
-        table = self.get_table(table_name=table_name, schema=schema, **kwargs)
+        table = self.get_table(schema=schema, table_name=table_name, **kwargs)
         if table is None:
             raise ValueError(f'Table {table_name} not found in {schema}')
         if len(rows) == 0:
@@ -387,16 +386,16 @@ class PGHandler(BaseHandler):
             self.logger.info(f'Inserted {rowcount} rows to table {schema}.{table_name}')
             return rowcount
 
-    def select_rows(self, table_name: str, schema: str, column_names: list[str] = None,
+    def select_rows(self, schema: str, table_name: str, column_names: list[str] = None,
                     where_clauses: list | tuple | WhereClause = None, order_by: list[OrderByClause] = None,
                     offset: int = None, limit: int = None, **kwargs) -> tuple[list, list[Row]] | tuple[None, None]:
         schema = NamingValidator.schema(schema)
         table_name = NamingValidator.table(table_name)
-        table = self.get_table(table_name=table_name, schema=schema, **kwargs)
+        table = self.get_table(schema=schema, table_name=table_name, **kwargs)
         if table is None:
-            raise ValueError(f'Table {table_name} not found')
+            raise ValueError(f'Table {table_name} not found in {schema}')
 
-        current_columns = self.get_columns(table_name=table_name, schema=schema, **kwargs)
+        current_columns = self.get_columns(schema=schema, table_name=table_name, **kwargs)
         if column_names is None:
             selected_columns = current_columns.values()
         else:
@@ -413,23 +412,22 @@ class PGHandler(BaseHandler):
         where_condition = where_clauses_parser(where_clauses=where_clauses, columns=current_columns)
         orders = order_by_parser(order_by=order_by, columns=current_columns)
 
-        stmt = select(*selected_columns).where(where_condition).order_by(*orders).offset(offset).limit(limit)
-
         with self.engine.connect() as conn:
+            stmt = select(*selected_columns).where(where_condition).order_by(*orders).offset(offset).limit(limit)
             cur = conn.execute(stmt)
             cols = list(cur.keys())
             rows = list(cur.fetchall())
             return cols, rows
 
-    def update_rows(self, table_name: str, schema: str, set_clauses: dict[str, Any],
+    def update_rows(self, schema: str, table_name: str, set_clauses: dict[str, Any],
                     where_clauses: list | tuple | WhereClause = None, **kwargs) -> int | None:
         schema = NamingValidator.schema(schema)
         table_name = NamingValidator.table(table_name)
-        table = self.get_table(table_name=table_name, schema=schema, **kwargs)
+        table = self.get_table(schema=schema, table_name=table_name, **kwargs)
         if table is None:
             raise ValueError(f'Table {table_name} not found in schema {schema}')
 
-        current_columns = self.get_columns(table_name=table_name, schema=schema, **kwargs)
+        current_columns = self.get_columns(schema=schema, table_name=table_name, **kwargs)
         _set_clauses = {}
         for column_name, set_value in set_clauses.items():
             column_name = NamingValidator.column(column_name)
@@ -453,11 +451,11 @@ class PGHandler(BaseHandler):
             self.logger.info(f'Updated {rowcount} rows in table {schema}.{table_name}')
             return rowcount
 
-    def delete_rows(self, table_name: str, schema: str, where_clauses: list | tuple | WhereClause = None,
+    def delete_rows(self, schema: str, table_name: str, where_clauses: list | tuple | WhereClause = None,
                     **kwargs) -> int | None:
         schema = NamingValidator.schema(schema)
         table_name = NamingValidator.table(table_name)
-        table = self.get_table(table_name=table_name, schema=schema, **kwargs)
+        table = self.get_table(schema=schema, table_name=table_name, **kwargs)
         if table is None:
             raise ValueError(f'Table {table_name} not found in schema {schema}')
 

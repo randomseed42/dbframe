@@ -4,7 +4,7 @@ from datetime import datetime
 from logging import FileHandler
 
 from dbframe import SQLiteDFHandler
-from dbframe.utils import WhereClause, OrderByClause
+from dbframe.utils import WhereClause, OrderByClause, NamingValidator
 from sqlalchemy import Column, INTEGER, TEXT, TIMESTAMP
 
 
@@ -91,9 +91,10 @@ class TestSQLiteHandler(unittest.TestCase):
 
     # Table CRUD
     def test_db_create_table(self):
-        temp_table = 'temp_table'
+        temp_table = 'tEmP_tAbLe'
         table = self.db.create_table(table_name=temp_table, columns=self._generate_columns())
-        self.assertEqual(table.name, temp_table)
+        self.assertEqual(table.name, NamingValidator.table(temp_table))
+        self.db.drop_table(table_name=temp_table)
 
         with self.assertRaisesRegex(ValueError, 'Table.*already exists.*'):
             self.db.create_table(table_name=self.table_name, columns=self._generate_columns())
@@ -111,10 +112,14 @@ class TestSQLiteHandler(unittest.TestCase):
         self.assertTrue(self.table_name in tables)
 
     def test_db_rename_table(self):
-        new_table_name = 'user2'
-        self.db.rename_table(old_table_name=self.table_name, new_table_name=new_table_name)
+        temp_table = 'Temp_Table'
+        self.db.create_table(table_name=temp_table, columns=self._generate_columns())
+        self.assertTrue(self.db.get_table(table_name=temp_table) is not None)
+
+        new_temp_table = 'new_tEMP_tAble'
+        self.db.rename_table(old_table_name=self.table_name, new_table_name=new_temp_table)
         self.assertTrue(self.db.get_table(table_name=self.table_name) is None)
-        self.assertEqual(self.db.get_table(table_name=new_table_name).name, new_table_name)
+        self.assertTrue(self.db.get_table(table_name=new_temp_table) is not None)
 
     def test_db_drop_table(self):
         self.db.drop_table(table_name=self.table_name)
@@ -122,14 +127,14 @@ class TestSQLiteHandler(unittest.TestCase):
 
     # Column CRUD
     def test_db_add_column(self):
-        new_column = Column('age', INTEGER())
+        new_column = Column('aGE', INTEGER())
         self.db.add_column(table_name=self.table_name, column=new_column)
         self.assertTrue('age' in self.db.get_columns(table_name=self.table_name))
 
     def test_db_add_columns(self):
         new_columns = [
             Column('uid', INTEGER()),
-            Column('first_name', TEXT()),
+            Column('first_nAmE', TEXT()),
             Column('last_name', TEXT()),
         ]
         self.db.add_columns(table_name=self.table_name, columns=new_columns)

@@ -8,7 +8,7 @@ from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.exc import NoSuchTableError
 
 from .base_handler import BaseHandler
-from .utils import WhereClause, OrderByClause, where_clauses_parser, order_by_parser, NamingValidator
+from .utils import NamingValidator, WhereClause, OrderByClause, where_clauses_parser, order_by_parser
 
 
 class SQLiteHandler(BaseHandler):
@@ -92,7 +92,7 @@ class SQLiteHandler(BaseHandler):
         table = Table(table_name, metadata, *columns, **kwargs)
         table.create(bind=self.engine, checkfirst=True)
         self.logger.info(f'Table {table_name} created')
-        return self.get_table(table_name, **kwargs)
+        return self.get_table(table_name=table_name, **kwargs)
 
     def get_table(self, table_name: str, **kwargs) -> Table | None:
         table_name = NamingValidator.table(table_name)
@@ -124,17 +124,16 @@ class SQLiteHandler(BaseHandler):
             return new_table_name
 
     def drop_table(self, table_name: str, **kwargs) -> str | None:
-        table_name = NamingValidator.table(table_name)
         table = self.get_table(table_name=table_name, **kwargs)
         if table is None:
             return None
         table.drop(bind=self.engine, checkfirst=True)
-        self.logger.info(f'Table {table_name} dropped')
-        return table_name
+        self.logger.info(f'Table {table.name} dropped')
+        return table.name
 
     # Column CRUD
     def add_column(self, table_name: str, column: Column, **kwargs) -> str | None:
-        table = self.get_table(table_name, **kwargs)
+        table = self.get_table(table_name=table_name, **kwargs)
         if table is None:
             return None
         column.name = NamingValidator.column(column.name)
@@ -152,7 +151,7 @@ class SQLiteHandler(BaseHandler):
         table = self.get_table(table_name=table_name, **kwargs)
         if table is None:
             return None
-        current_columns = self.get_columns(table_name, **kwargs)
+        current_columns = self.get_columns(table_name=table_name, **kwargs)
         new_column_names = []
         with self.engine.connect() as conn:
             ctx = MigrationContext.configure(conn)
@@ -162,7 +161,7 @@ class SQLiteHandler(BaseHandler):
                 if column.name in current_columns or column.name in new_column_names:
                     self.logger.warning(f'Column {column.name} already exists in table {table.name}')
                     continue
-                op.add_column(table_name, column, **kwargs)
+                op.add_column(table_name, column)
                 new_column_names.append(column.name)
         self.logger.info(f'Added columns {new_column_names} to table {table.name}')
         return new_column_names
@@ -239,7 +238,7 @@ class SQLiteHandler(BaseHandler):
 
     # Index CRUD
     def create_index(self, table_name: str, column_names: list[str], **kwargs) -> str | None:
-        table = self.get_table(table_name, **kwargs)
+        table = self.get_table(table_name=table_name, **kwargs)
         if table is None:
             return None
         current_columns = self.get_columns(table_name, **kwargs)
@@ -262,7 +261,7 @@ class SQLiteHandler(BaseHandler):
             return idx_name
 
     def get_indexes(self, table_name: str, **kwargs) -> dict[str, list[str]] | None:
-        table = self.get_table(table_name, **kwargs)
+        table = self.get_table(table_name=table_name, **kwargs)
         if table is None:
             return None
         indexes = {idx.name: list(idx.columns.keys()) for idx in table.indexes}
@@ -272,30 +271,30 @@ class SQLiteHandler(BaseHandler):
         table = self.get_table(table_name, **kwargs)
         if table is None:
             return None
-        current_columns = self.get_columns(table_name, **kwargs)
+        current_columns = self.get_columns(table_name=table_name, **kwargs)
         column_names = map(NamingValidator.column, column_names)
         index_column_names = []
         for column_name in column_names:
             if column_name not in current_columns:
-                raise ValueError(f'Column {column_name} is not in {table_name}')
+                raise ValueError(f'Column {column_name} is not in {table.name}')
             if column_name in index_column_names:
                 raise ValueError(f'Column {column_name} is duplicated')
             index_column_names.append(column_name)
-        idx_name = 'ix_{}_{}'.format(table_name, '_'.join(index_column_names))
+        idx_name = 'ix_{}_{}'.format(table.name, '_'.join(index_column_names))
         if idx_name not in self.get_indexes(table_name=table_name, **kwargs):
             raise ValueError(f'Index {idx_name} does not exist')
         with self.engine.connect() as conn:
             ctx = MigrationContext.configure(conn)
             op = Operations(ctx)
-            op.drop_index(idx_name, table_name, if_exists=True, **kwargs)
+            op.drop_index(idx_name, table.name, if_exists=True, **kwargs)
             self.logger.info(f'Drop index {idx_name} successful')
             return idx_name
 
     # Rows CRUD
     def insert_rows(self, table_name: str, rows: list[dict], on_conflict: Literal['do_nothing'] = None,
                     **kwargs) -> int | None:
-        table = self.get_table(table_name, **kwargs)
         table_name = NamingValidator.table(table_name)
+        table = self.get_table(table_name=table_name, **kwargs)
         if table is None:
             raise ValueError(f'Table {table_name} not found')
         if len(rows) == 0:
