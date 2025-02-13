@@ -4,8 +4,8 @@ from datetime import datetime
 from logging import FileHandler
 
 from dbframe import SQLiteDFHandler
-from dbframe.utils import WhereClause, OrderByClause, NamingValidator
-from sqlalchemy import Column, INTEGER, TEXT, TIMESTAMP
+from dbframe.utils import NamingValidator, OrderByClause, WhereClause
+from sqlalchemy import Column, DateTime, Integer, String
 
 
 class TestSQLiteHandler(unittest.TestCase):
@@ -19,9 +19,9 @@ class TestSQLiteHandler(unittest.TestCase):
     @staticmethod
     def _generate_columns() -> list[Column]:
         return [
-            Column('uid', INTEGER(), primary_key=True),
-            Column('user', TEXT()),
-            Column('register_datetime', TIMESTAMP()),
+            Column('uid', Integer, primary_key=True),
+            Column('user', String),
+            Column('register_datetime', DateTime),
         ]
 
     @classmethod
@@ -127,15 +127,15 @@ class TestSQLiteHandler(unittest.TestCase):
 
     # Column CRUD
     def test_db_add_column(self):
-        new_column = Column('aGE', INTEGER())
+        new_column = Column('aGE', Integer)
         self.db.add_column(table_name=self.table_name, column=new_column)
         self.assertTrue('age' in self.db.get_columns(table_name=self.table_name))
 
     def test_db_add_columns(self):
         new_columns = [
-            Column('uid', INTEGER()),
-            Column('first_nAmE', TEXT()),
-            Column('last_name', TEXT()),
+            Column('uid', Integer),
+            Column('first_nAmE', String),
+            Column('last_name', String),
         ]
         self.db.add_columns(table_name=self.table_name, columns=new_columns)
         current_columns = self.db.get_columns(table_name=self.table_name)

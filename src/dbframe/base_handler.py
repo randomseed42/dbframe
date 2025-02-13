@@ -1,10 +1,10 @@
-from typing import Literal, Any
+from typing import Any, Literal
 
-from sqlalchemy import Table, Column, Row
+from sqlalchemy import Column, Row, Table
 from sqlalchemy.util import FacadeDict
 
 from .logger import Logger
-from .utils import WhereClause, OrderByClause
+from .utils import OrderByClause, WhereClause
 
 
 class BaseHandler:

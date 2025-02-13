@@ -1,16 +1,16 @@
 import os
-from typing import Literal, Any
+from typing import Any, Literal
 from urllib.parse import quote_plus
 
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from sqlalchemy import create_engine, text, MetaData, Table, Column, select, Row, delete
+from sqlalchemy import Column, create_engine, delete, MetaData, Row, select, Table, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.util import FacadeDict
 
 from .base_handler import BaseHandler
-from .utils import NamingValidator, WhereClause, OrderByClause, where_clauses_parser, order_by_parser
+from .utils import NamingValidator, order_by_parser, OrderByClause, where_clauses_parser, WhereClause
 
 
 class PGHandler(BaseHandler):

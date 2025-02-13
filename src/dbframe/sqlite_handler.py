@@ -1,14 +1,14 @@
 import os
-from typing import Literal, Any
+from typing import Any, Literal
 
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from sqlalchemy import create_engine, text, MetaData, Table, Column, select, Row, delete
+from sqlalchemy import Column, create_engine, delete, MetaData, Row, select, Table, text
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.exc import NoSuchTableError
 
 from .base_handler import BaseHandler
-from .utils import NamingValidator, WhereClause, OrderByClause, where_clauses_parser, order_by_parser
+from .utils import NamingValidator, order_by_parser, OrderByClause, where_clauses_parser, WhereClause
 
 
 class SQLiteHandler(BaseHandler):

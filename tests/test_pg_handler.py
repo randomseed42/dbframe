@@ -4,8 +4,8 @@ from datetime import datetime
 from logging import FileHandler
 
 from dbframe import PGDFHandler
-from dbframe.utils import WhereClause, OrderByClause, NamingValidator
-from sqlalchemy import Column, INTEGER, TEXT, TIMESTAMP
+from dbframe.utils import NamingValidator, OrderByClause, WhereClause
+from sqlalchemy import Column, DateTime, Integer, String
 
 
 class TestPGHandler(unittest.TestCase):
@@ -19,9 +19,9 @@ class TestPGHandler(unittest.TestCase):
     @staticmethod
     def _generate_columns() -> list[Column]:
         return [
-            Column('uid', INTEGER(), primary_key=True),
-            Column('user', TEXT()),
-            Column('register_datetime', TIMESTAMP()),
+            Column('uid', Integer, primary_key=True),
+            Column('user', String),
+            Column('register_datetime', DateTime),
         ]
 
     @classmethod
@@ -196,22 +196,22 @@ class TestPGHandler(unittest.TestCase):
         self.assertTrue(set(col.name for col in self.columns).issubset(columns.keys()))
 
     def test_db_add_column(self):
-        new_column = Column('aGe', INTEGER())
+        new_column = Column('aGe', Integer)
         self.db.add_column(schema=self.schema, table_name=self.table_name, column=new_column)
         self.assertTrue('age' in self.db.get_columns(schema=self.schema, table_name=self.table_name))
 
     def test_db_add_columns(self):
         new_columns = [
-            Column('uid', INTEGER()),
-            Column('first_NaMe', TEXT()),
-            Column('last_name', TEXT()),
+            Column('uid', Integer),
+            Column('first_NaMe', String),
+            Column('last_name', String),
         ]
         self.db.add_columns(schema=self.schema, table_name=self.table_name, columns=new_columns)
         current_columns = self.db.get_columns(schema=self.schema, table_name=self.table_name)
         self.assertTrue('first_name' in current_columns and 'last_name' in current_columns)
 
     def test_db_drop_column(self):
-        new_column = Column('email', TEXT())
+        new_column = Column('email', String)
         self.db.add_column(schema=self.schema, table_name=self.table_name, column=new_column)
         current_columns = self.db.get_columns(schema=self.schema, table_name=self.table_name)
         self.assertTrue('email' in current_columns)
@@ -221,8 +221,8 @@ class TestPGHandler(unittest.TestCase):
 
     def test_db_drop_columns(self):
         new_columns = [
-            Column('password', TEXT()),
-            Column('role', TEXT()),
+            Column('password', String),
+            Column('role', String),
         ]
         self.db.add_columns(schema=self.schema, table_name=self.table_name, columns=new_columns)
         current_columns = self.db.get_columns(schema=self.schema, table_name=self.table_name)

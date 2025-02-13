@@ -1,7 +1,10 @@
 import re
 from typing import Literal, NamedTuple, Sequence
 
-from sqlalchemy import and_, or_, Table, true, Column
+import numpy as np
+import pandas as pd
+from sqlalchemy import and_, Boolean, Column, DateTime, Float, Integer, or_, String, Table, Text, Time, true
+from sqlalchemy.sql.sqltypes import TypeEngine
 
 WhereOperator = Literal[
     '==',
@@ -52,7 +55,7 @@ def where_clauses_parser(
         table: Table = None,
 ):
     if not (columns is None or len(columns) == 0) ^ (table is None):
-        raise ValueError(f'Where clause must have one of columns or table argument')
+        raise ValueError('Where clause must have one of `columns` or `table` argument')
 
     def _where_parser(_where: WhereClause | None):
         _columns = columns or table.columns
@@ -128,3 +131,99 @@ class NamingValidator:
         if not re.match('^[a-zA-Z_][a-zA-Z0-9_]*$', name):
             raise ValueError(f'The column name {name} is invalid')
         return name.lower()
+
+"""
+Pandas dtypes include @register_extension_dtype
+"""
+SQL_DTYPE_MAP = {
+    # Bool Types
+    bool: Boolean,
+    np.bool: Boolean,
+    pd.BooleanDtype(): Boolean,
+
+    # Integer Types
+    int: Integer,
+    np.int8: Integer,
+    np.int16: Integer,
+    np.int32: Integer,
+    np.int64: Integer,
+    pd.Int8Dtype(): Integer,
+    pd.Int16Dtype(): Integer,
+    pd.Int32Dtype(): Integer,
+    pd.Int64Dtype(): Integer,
+    pd.UInt8Dtype(): Integer,
+    pd.UInt16Dtype(): Integer,
+    pd.UInt32Dtype(): Integer,
+    pd.UInt64Dtype(): Integer,
+
+    # Float Types
+    float: Float,
+    np.float16: Float,
+    np.float32: Float,
+    np.float64: Float,
+    pd.Float32Dtype(): Float,
+    pd.Float64Dtype(): Float,
+
+    # String Types
+    str: String,
+    np.str_: String,
+    np.object_: String,
+    pd.StringDtype(): String,
+    pd.CategoricalDtype.type: String,
+
+    # DateTime Types
+    np.datetime64: DateTime,
+    pd.DatetimeTZDtype: DateTime(timezone=True),
+    pd.DatetimeIndex: DateTime,
+    pd.Timestamp: DateTime,
+
+    # Time Types
+    np.timedelta64: Time,
+    pd.Timedelta: Time,
+
+    # pd.Period: Date,
+    # pd.PeriodDtype('Y'): Date,
+    # pd.PeriodDtype('M'): Date,
+    # pd.PeriodDtype('W'): Date,
+    # pd.PeriodDtype('W-MON'): Date,
+    # pd.PeriodDtype('W-TUE'): Date,
+    # pd.PeriodDtype('W-WED'): Date,
+    # pd.PeriodDtype('W-THU'): Date,
+    # pd.PeriodDtype('W-FRI'): Date,
+    # pd.PeriodDtype('W-SAT'): Date,
+    # pd.PeriodDtype('W-SUN'): Date,
+    # pd.PeriodDtype('D'): Date,
+    # pd.PeriodDtype('h'): DateTime,
+    # pd.PeriodDtype('min'): DateTime,
+    # pd.PeriodDtype('s'): DateTime,
+    # pd.PeriodDtype('ms'): DateTime,
+    # pd.PeriodDtype('us'): DateTime,
+    # pd.PeriodDtype('ns'): DateTime,
+    # pd.DateOffset: Date,
+
+    # Text for large strings
+    # pd.ArrowDtype(): Text,
+}
+
+
+def series_to_sql_dtype(s: np.typing.NDArray | pd.Series | pd.DatetimeIndex | pd.Categorical) -> TypeEngine:
+    if hasattr(s.dtype, 'subtype'):
+        python_type = s.dtype.subtype
+    elif hasattr(s.dtype, 'freq'):
+        python_type = s.dtype
+    elif hasattr(s.dtype, 'tz'):
+        python_type = pd.DatetimeTZDtype
+    else:
+        python_type = s.dtype.type
+    sql_dtype = SQL_DTYPE_MAP.get(python_type, Text)
+    return sql_dtype
+
+
+def dataframe_to_columns(
+        df: pd.DataFrame,
+        primary_col: str = None,
+        unique_cols: list[str] = None,
+        notnull_cols: list[str] = None,
+        index_cols: list[str | list[str]] = None,
+) -> list[Column]:
+    ...
