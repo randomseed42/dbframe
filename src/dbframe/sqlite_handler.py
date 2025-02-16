@@ -3,12 +3,12 @@ from typing import Any, Literal
 
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from sqlalchemy import Column, create_engine, delete, MetaData, Row, select, Table, text
+from sqlalchemy import Column, MetaData, Row, Table, create_engine, delete, select, text
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.exc import NoSuchTableError
 
 from .base_handler import BaseHandler
-from .utils import NamingValidator, order_by_parser, OrderByClause, where_clauses_parser, WhereClause
+from .utils import NamingValidator, OrderByClause, WhereClause, order_by_parser, where_clauses_parser
 
 
 class SQLiteHandler(BaseHandler):

@@ -3,7 +3,7 @@ from typing import Literal, NamedTuple, Sequence
 
 import numpy as np
 import pandas as pd
-from sqlalchemy import and_, Boolean, Column, DateTime, Float, Integer, or_, String, Table, Text, Time, true
+from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, Table, Text, Time, and_, or_, true, Constraint, UniqueConstraint, PrimaryKeyConstraint, CheckConstraint, Index
 from sqlalchemy.sql.sqltypes import TypeEngine
 
 WhereOperator = Literal[
@@ -155,6 +155,7 @@ SQL_DTYPE_MAP = {
     pd.UInt16Dtype(): Integer,
     pd.UInt32Dtype(): Integer,
     pd.UInt64Dtype(): Integer,
+    pd.RangeIndex: Integer,
 
     # Float Types
     float: Float,
@@ -180,33 +181,10 @@ SQL_DTYPE_MAP = {
     # Time Types
     np.timedelta64: Time,
     pd.Timedelta: Time,
-
-    # pd.Period: Date,
-    # pd.PeriodDtype('Y'): Date,
-    # pd.PeriodDtype('M'): Date,
-    # pd.PeriodDtype('W'): Date,
-    # pd.PeriodDtype('W-MON'): Date,
-    # pd.PeriodDtype('W-TUE'): Date,
-    # pd.PeriodDtype('W-WED'): Date,
-    # pd.PeriodDtype('W-THU'): Date,
-    # pd.PeriodDtype('W-FRI'): Date,
-    # pd.PeriodDtype('W-SAT'): Date,
-    # pd.PeriodDtype('W-SUN'): Date,
-    # pd.PeriodDtype('D'): Date,
-    # pd.PeriodDtype('h'): DateTime,
-    # pd.PeriodDtype('min'): DateTime,
-    # pd.PeriodDtype('s'): DateTime,
-    # pd.PeriodDtype('ms'): DateTime,
-    # pd.PeriodDtype('us'): DateTime,
-    # pd.PeriodDtype('ns'): DateTime,
-    # pd.DateOffset: Date,
-
-    # Text for large strings
-    # pd.ArrowDtype(): Text,
 }
 
 
-def series_to_sql_dtype(s: np.typing.NDArray | pd.Series | pd.DatetimeIndex | pd.Categorical) -> TypeEngine:
+def series_to_sql_dtype(s: np.typing.NDArray | pd.Series | pd.DatetimeIndex | pd.RangeIndex | pd.MultiIndex | pd.Index | pd.Categorical) -> TypeEngine:
     if hasattr(s.dtype, 'subtype'):
         python_type = s.dtype.subtype
     elif hasattr(s.dtype, 'freq'):
@@ -219,11 +197,86 @@ def series_to_sql_dtype(s: np.typing.NDArray | pd.Series | pd.DatetimeIndex | pd
     return sql_dtype
 
 
-def dataframe_to_columns(
+def _df_to_sql_primary_column(df: pd.DataFrame, df_column_name: str | Literal['index'] = None, sql_column_name: str = None) -> Column | None:
+    if df_column_name is None:
+        return None
+    if df_column_name == 'index':
+        column_name = sql_column_name or 'uid'
+        column_name = NamingValidator.column(column_name)
+        sql_dtype = series_to_sql_dtype(df.index)
+        return Column(column_name, sql_dtype, primary_key=True, nullable=False, autoincrement='auto')
+    if df_column_name not in df.columns:
+        raise ValueError(f'Column {df_column_name} does not exist in df')
+    column_name = sql_column_name or str(df_column_name)
+    column_name = NamingValidator.column(column_name)
+    sql_dtype = series_to_sql_dtype(df[df_column_name])
+    return Column(column_name, sql_dtype, primary_key=True, nullable=False, autoincrement='auto')
+
+
+def _df_to_sql_index(df: pd.DataFrame, df_column_names: list[str], table_name: str) -> Index | None:
+    index_column_names = []
+    for df_column_name in df_column_names:
+        if df_column_name not in df.columns:
+            raise ValueError(f'Column {df_column_name} does not exist in df')
+        column_name = NamingValidator.column(df_column_name)
+        if column_name in index_column_names:
+            raise ValueError(f'Column {df_column_name} is duplicated')
+        index_column_names.append(column_name)
+    idx_name = 'ix_{}_{}'.format(table_name, '_'.join(index_column_names))
+    index = Index(idx_name, *index_column_names)
+    return index
+
+
+def _df_to_sql_unique(df: pd.DataFrame, df_column_names: list[str]) -> UniqueConstraint | None:
+    unique_column_names = []
+    for df_column_name in df_column_names:
+        if df_column_name not in df.columns:
+            raise ValueError(f'Column {df_column_name} does not exist in df')
+        column_name = NamingValidator.column(df_column_name)
+        if column_name in unique_column_names:
+            raise ValueError(f'Column {df_column_name} is duplicated')
+        unique_column_names.append(column_name)
+    idx_name = 'uix_{}_{}'.format('table_name_placeholder', '_'.join(unique_column_names))
+    unique_constraint = UniqueConstraint(*unique_column_names, name=idx_name)
+    return unique_constraint
+
+
+def df_to_sql_columns(
         df: pd.DataFrame,
-        primary_col: str = None,
-        unique_cols: list[str] = None,
-        notnull_cols: list[str] = None,
-        index_cols: list[str | list[str]] = None,
-) -> list[Column]:
-    ...
+        table_name: str,
+        primary_column_name: str | Literal['index'] = None,
+        notnull_column_names: list[str] = None,
+        index_column_names: list[str | list[str]] = None,
+        unique_column_names: list[str | list[str]] = None,
+) -> list[Column | Constraint | Index] | None:
+    table_name = NamingValidator.table(table_name)
+    schema_items = []
+    primary_column = _df_to_sql_primary_column(df=df, df_column_name=primary_column_name)
+    if primary_column is not None:
+        schema_items.append(primary_column)
+    if notnull_column_names is None:
+        notnull_column_names = []
+    if index_column_names is None:
+        index_column_names = []
+    if unique_column_names is None:
+        unique_column_names = []
+    for df_column_name in df.columns:
+        if df_column_name == primary_column_name:
+            continue
+        column_name = NamingValidator.column(df_column_name)
+        sql_dtype = series_to_sql_dtype(df[df_column_name])
+        is_nullable = df_column_name not in notnull_column_names
+        is_index = df_column_name in index_column_names
+        is_unique = df_column_name in unique_column_names
+        schema_items.append(Column(column_name, sql_dtype, nullable=is_nullable, index=is_index, unique=is_unique))
+    for index_column_names_group in index_column_names:
+        if not isinstance(index_column_names_group, list):
+            continue
+        composite_index = _df_to_sql_index(df=df, df_column_names=index_column_names_group, table_name=table_name)
+        schema_items.append(composite_index)
+    for unique_column_names_group in unique_column_names:
+        if not isinstance(unique_column_names_group, list):
+            continue
+        composite_unique = _df_to_sql_unique(df=df, df_column_names=unique_column_names_group)
+        schema_items.append(composite_unique)
+    return schema_items

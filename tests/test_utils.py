@@ -5,8 +5,8 @@ from logging import FileHandler
 import numpy as np
 import pandas as pd
 from dbframe.logger import Logger
-from dbframe.utils import series_to_sql_dtype, where_clauses_parser, WhereClause
-from sqlalchemy import Boolean, Column, DateTime, Float, Integer, MetaData, String, Table, Text, Time
+from dbframe.utils import WhereClause, series_to_sql_dtype, where_clauses_parser, df_to_sql_columns
+from sqlalchemy import Boolean, Column, DateTime, Float, Integer, MetaData, String, Table, Text, Time, Index
 
 
 class TestUtils(unittest.TestCase):
@@ -79,6 +79,10 @@ class TestUtils(unittest.TestCase):
             (pd.Series([1, 2, None]), Float),
             (pd.Series([1, 2, 3]).convert_dtypes(), Integer),
             (pd.Series([1.0, 2.0, 3.0]).convert_dtypes(), Integer),
+            (pd.RangeIndex(0, 10, 1), Integer),
+            (pd.Index([1,2,3]), Integer),
+            (pd.Series(pd.Index([1, 2, None])).convert_dtypes(), Integer),
+
         ]
         for i, (x, t) in enumerate(cases):
             self.assertEqual(series_to_sql_dtype(x), t)
@@ -92,6 +96,8 @@ class TestUtils(unittest.TestCase):
             (pd.Series(dtype=pd.Float64Dtype()), Float),
             (pd.Series([1.0, 2.0]), Float),
             (pd.Series([1.0, 2.0]).convert_dtypes(), Integer),
+            (pd.Index([1.1, 2.1, 3.1]), Float),
+            (pd.Index([1, 2, None]), Float),
         ]
         for i, (x, t) in enumerate(cases):
             self.assertEqual(series_to_sql_dtype(x), t)
@@ -104,6 +110,9 @@ class TestUtils(unittest.TestCase):
             (pd.Series(dtype=np.object_), String),
             (pd.Categorical(['a', 'b', 'a']), String),
             (pd.Series(['a', 'b', 'a']).astype(pd.CategoricalDtype()), String),
+            (pd.Index(['a', 'b', 'c']), String),
+            (pd.Index(['a', 'b', None]), String),
+            (pd.MultiIndex.from_product([['a', 'b'], [0, 1]]), String),
         ]
         for i, (x, t) in enumerate(cases):
             self.assertEqual(series_to_sql_dtype(x), t)
@@ -153,3 +162,43 @@ class TestUtils(unittest.TestCase):
         self.logger.info(f'{id(Integer())}, {id(Integer())}')
         self.assertNotEqual(Integer(), Integer())
         self.assertTrue(Integer is Integer)
+
+    def test_dataframe_to_sql_columns(self):
+        data = [
+            ['John', 17, 1.75],
+            ['Jack', 18, 1.80],
+            ['Jane', 19, 1.66],
+            ['Judy', 16, 1.62],
+        ]
+        columns = ['nAmE', 'aGe', 'height']
+        df = pd.DataFrame(data=data, columns=columns)
+
+        columns = df_to_sql_columns(df=df, table_name='users')
+        self.assertEqual(len(columns), 3)
+
+        columns = df_to_sql_columns(df=df, table_name='users',
+                                    primary_column_name='index')
+        self.assertEqual(len(columns), 4)
+        self.assertTrue(columns[0].primary_key)
+
+        columns = df_to_sql_columns(df=df, table_name='users',
+                                    primary_column_name='nAmE')
+        self.assertEqual(len(columns), 3)
+        self.assertEqual(columns[0].name, 'name')
+
+        columns = df_to_sql_columns(df=df, table_name='users',
+                                    primary_column_name=None,
+                                    notnull_column_names=['nAmE', 'aGe'])
+        self.assertEqual(len(columns), 3)
+        self.assertFalse(columns[0].nullable)
+        self.assertFalse(columns[1].nullable)
+
+        columns = df_to_sql_columns(df=df, table_name='uSeRs',
+                                    primary_column_name=None,
+                                    notnull_column_names=['nAmE', 'age'],
+                                    index_column_names=['nAmE', ['aGe', 'height']])
+        self.assertEqual(len(columns), 4)
+        self.assertTrue(columns[0].index)
+        self.assertFalse(columns[1].index)
+        self.assertTrue(isinstance(columns[3], Index))
+        self.assertEqual(columns[3].name, 'ix_users_age_height')
