@@ -1,9 +1,11 @@
 import re
+from datetime import datetime, time, timedelta
 from typing import Literal, NamedTuple, Sequence
 
 import numpy as np
 import pandas as pd
-from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, Table, Text, Time, and_, or_, true, Constraint, UniqueConstraint, PrimaryKeyConstraint, CheckConstraint, Index
+from sqlalchemy import Boolean, Column, Constraint, DateTime, Float, Index, Integer, String, Table, Text, Time, \
+    UniqueConstraint, and_, or_, true
 from sqlalchemy.sql.sqltypes import TypeEngine
 
 WhereOperator = Literal[
@@ -137,11 +139,13 @@ Pandas dtypes include @register_extension_dtype
 """
 SQL_DTYPE_MAP = {
     # Bool Types
+    'bool': Boolean,
     bool: Boolean,
     np.bool: Boolean,
     pd.BooleanDtype(): Boolean,
 
     # Integer Types
+    'int': Integer,
     int: Integer,
     np.int8: Integer,
     np.int16: Integer,
@@ -158,6 +162,7 @@ SQL_DTYPE_MAP = {
     pd.RangeIndex: Integer,
 
     # Float Types
+    'float': Float,
     float: Float,
     np.float16: Float,
     np.float32: Float,
@@ -166,6 +171,7 @@ SQL_DTYPE_MAP = {
     pd.Float64Dtype(): Float,
 
     # String Types
+    'str': String,
     str: String,
     np.str_: String,
     np.object_: String,
@@ -173,47 +179,69 @@ SQL_DTYPE_MAP = {
     pd.CategoricalDtype.type: String,
 
     # DateTime Types
+    'datetime': DateTime,
+    datetime: DateTime,
     np.datetime64: DateTime,
     pd.DatetimeTZDtype: DateTime(timezone=True),
     pd.DatetimeIndex: DateTime,
     pd.Timestamp: DateTime,
 
     # Time Types
+    'time': Time,
+    time: Time,
+    timedelta: Time,
     np.timedelta64: Time,
     pd.Timedelta: Time,
 }
 
 
-def series_to_sql_dtype(s: np.typing.NDArray | pd.Series | pd.DatetimeIndex | pd.RangeIndex | pd.MultiIndex | pd.Index | pd.Categorical) -> TypeEngine:
+def series_to_sql_dtype(s: np.typing.NDArray | pd.Series | pd.DatetimeIndex | pd.RangeIndex | pd.MultiIndex | pd.Index | pd.Categorical, datetime_fmt: str = '%Y-%m-%d %H:%M:%S', **kwargs) -> TypeEngine:
     if hasattr(s.dtype, 'subtype'):
         python_type = s.dtype.subtype
     elif hasattr(s.dtype, 'freq'):
         python_type = s.dtype
     elif hasattr(s.dtype, 'tz'):
         python_type = pd.DatetimeTZDtype
+    elif s.dtype.type in [
+        'str',
+        str,
+        np.str_,
+        np.object_,
+        pd.StringDtype(),
+    ]:
+        if len(s) == 0:
+            python_type = s.dtype.type
+        else:
+            try:
+                pd.to_datetime(s, errors='raise', format=datetime_fmt, **kwargs)
+                python_type = datetime
+            except ValueError:
+                python_type = s.dtype.type
     else:
         python_type = s.dtype.type
     sql_dtype = SQL_DTYPE_MAP.get(python_type, Text)
     return sql_dtype
 
 
-def _df_to_sql_primary_column(df: pd.DataFrame, df_column_name: str | Literal['index'] = None, sql_column_name: str = None) -> Column | None:
+def _df_to_sql_primary_column(df: pd.DataFrame, df_column_name: str | Literal['index'] = None, sql_column_name: str = None, **kwargs) -> Column | None:
     if df_column_name is None:
         return None
     if df_column_name == 'index':
         column_name = sql_column_name or 'uid'
         column_name = NamingValidator.column(column_name)
-        sql_dtype = series_to_sql_dtype(df.index)
+        sql_dtype = series_to_sql_dtype(df.index, **kwargs)
         return Column(column_name, sql_dtype, primary_key=True, nullable=False, autoincrement='auto')
     if df_column_name not in df.columns:
         raise ValueError(f'Column {df_column_name} does not exist in df')
     column_name = sql_column_name or str(df_column_name)
     column_name = NamingValidator.column(column_name)
-    sql_dtype = series_to_sql_dtype(df[df_column_name])
+    sql_dtype = series_to_sql_dtype(df[df_column_name], **kwargs)
     return Column(column_name, sql_dtype, primary_key=True, nullable=False, autoincrement='auto')
 
 
-def _df_to_sql_index(df: pd.DataFrame, df_column_names: list[str], table_name: str) -> Index | None:
+def _df_to_sql_index(df: pd.DataFrame, df_column_names: str | list[str], table_name: str) -> Index | None:
+    if isinstance(df_column_names, str):
+        df_column_names = [df_column_names]
     index_column_names = []
     for df_column_name in df_column_names:
         if df_column_name not in df.columns:
@@ -227,7 +255,9 @@ def _df_to_sql_index(df: pd.DataFrame, df_column_names: list[str], table_name: s
     return index
 
 
-def _df_to_sql_unique(df: pd.DataFrame, df_column_names: list[str]) -> UniqueConstraint | None:
+def _df_to_sql_unique(df: pd.DataFrame, df_column_names: str | list[str], table_name: str) -> UniqueConstraint | None:
+    if isinstance(df_column_names, str):
+        df_column_names = [df_column_names]
     unique_column_names = []
     for df_column_name in df_column_names:
         if df_column_name not in df.columns:
@@ -236,7 +266,7 @@ def _df_to_sql_unique(df: pd.DataFrame, df_column_names: list[str]) -> UniqueCon
         if column_name in unique_column_names:
             raise ValueError(f'Column {df_column_name} is duplicated')
         unique_column_names.append(column_name)
-    idx_name = 'uix_{}_{}'.format('table_name_placeholder', '_'.join(unique_column_names))
+    idx_name = 'uix_{}_{}'.format(table_name, '_'.join(unique_column_names))
     unique_constraint = UniqueConstraint(*unique_column_names, name=idx_name)
     return unique_constraint
 
@@ -245,13 +275,15 @@ def df_to_sql_columns(
         df: pd.DataFrame,
         table_name: str,
         primary_column_name: str | Literal['index'] = None,
+        primary_sql_column_name: str = None,
         notnull_column_names: list[str] = None,
         index_column_names: list[str | list[str]] = None,
         unique_column_names: list[str | list[str]] = None,
+        **kwargs
 ) -> list[Column | Constraint | Index] | None:
     table_name = NamingValidator.table(table_name)
     schema_items = []
-    primary_column = _df_to_sql_primary_column(df=df, df_column_name=primary_column_name)
+    primary_column = _df_to_sql_primary_column(df=df, df_column_name=primary_column_name, sql_column_name=primary_sql_column_name)
     if primary_column is not None:
         schema_items.append(primary_column)
     if notnull_column_names is None:
@@ -264,19 +296,13 @@ def df_to_sql_columns(
         if df_column_name == primary_column_name:
             continue
         column_name = NamingValidator.column(df_column_name)
-        sql_dtype = series_to_sql_dtype(df[df_column_name])
+        sql_dtype = series_to_sql_dtype(df[df_column_name], **kwargs)
         is_nullable = df_column_name not in notnull_column_names
-        is_index = df_column_name in index_column_names
-        is_unique = df_column_name in unique_column_names
-        schema_items.append(Column(column_name, sql_dtype, nullable=is_nullable, index=is_index, unique=is_unique))
+        schema_items.append(Column(column_name, sql_dtype, nullable=is_nullable))
     for index_column_names_group in index_column_names:
-        if not isinstance(index_column_names_group, list):
-            continue
         composite_index = _df_to_sql_index(df=df, df_column_names=index_column_names_group, table_name=table_name)
         schema_items.append(composite_index)
     for unique_column_names_group in unique_column_names:
-        if not isinstance(unique_column_names_group, list):
-            continue
-        composite_unique = _df_to_sql_unique(df=df, df_column_names=unique_column_names_group)
+        composite_unique = _df_to_sql_unique(df=df, df_column_names=unique_column_names_group, table_name=table_name)
         schema_items.append(composite_unique)
     return schema_items

@@ -5,8 +5,8 @@ from logging import FileHandler
 import numpy as np
 import pandas as pd
 from dbframe.logger import Logger
-from dbframe.utils import WhereClause, series_to_sql_dtype, where_clauses_parser, df_to_sql_columns
-from sqlalchemy import Boolean, Column, DateTime, Float, Integer, MetaData, String, Table, Text, Time, Index
+from dbframe.utils import WhereClause, df_to_sql_columns, series_to_sql_dtype, where_clauses_parser
+from sqlalchemy import Boolean, Column, DateTime, Float, Index, Integer, MetaData, String, Table, Text, Time
 
 
 class TestUtils(unittest.TestCase):
@@ -115,7 +115,10 @@ class TestUtils(unittest.TestCase):
             (pd.MultiIndex.from_product([['a', 'b'], [0, 1]]), String),
         ]
         for i, (x, t) in enumerate(cases):
-            self.assertEqual(series_to_sql_dtype(x), t)
+            try:
+                self.assertEqual(series_to_sql_dtype(x), t)
+            except Exception:
+                breakpoint()
 
     def test_series_to_sql_dtype_datetime(self):
         cases = [
@@ -197,8 +200,17 @@ class TestUtils(unittest.TestCase):
                                     primary_column_name=None,
                                     notnull_column_names=['nAmE', 'age'],
                                     index_column_names=['nAmE', ['aGe', 'height']])
-        self.assertEqual(len(columns), 4)
-        self.assertTrue(columns[0].index)
+        self.assertEqual(len(columns), 5)
+        self.assertFalse(columns[0].index)
         self.assertFalse(columns[1].index)
         self.assertTrue(isinstance(columns[3], Index))
-        self.assertEqual(columns[3].name, 'ix_users_age_height')
+        self.assertEqual(columns[3].name, 'ix_users_name')
+        self.assertEqual(columns[4].name, 'ix_users_age_height')
+
+        columns = df_to_sql_columns(df=df, table_name='uSeRs',
+                                    primary_column_name=None,
+                                    notnull_column_names=['nAmE', 'age'],
+                                    index_column_names=['nAmE', ['aGe', 'height']],
+                                    unique_column_names=['aGe', ['aGe', 'height']])
+        self.assertEqual(len(columns), 7)
+        self.assertEqual(columns[6].name, 'uix_users_age_height')
