@@ -8,8 +8,10 @@ from sqlalchemy import Column, DateTime, MetaData, Row, Table, create_engine, de
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.sql.sqltypes import TypeEngine
+from sqlalchemy.util import FacadeDict
 
-from .base_handler import BaseHandler
+from .base_handler import BaseDFHandler, BaseHandler
+from .types import PyLiteralType
 from .utils import NamingValidator, OrderByClause, WhereClause, df_to_sql_columns, order_by_parser, where_clauses_parser
 
 
@@ -23,7 +25,7 @@ class SQLiteHandler(BaseHandler):
             log_file: str = None,
     ):
         super().__init__(log_name=log_name, log_level=log_level, log_console=log_console, log_file=log_file)
-        self.db_path = db_path
+        self.db_path = db_path or ':memory:'
         self.url = self._generate_url(self.db_path)
         self.engine = create_engine(
             self.url,
@@ -36,7 +38,7 @@ class SQLiteHandler(BaseHandler):
 
     def _generate_url(self, db_path: str, **kwargs) -> str:
         url_template = 'sqlite:///{}'
-        if db_path is None or db_path == ":memory:":
+        if db_path == ":memory:":
             return url_template.format(':memory:')
         return url_template.format(os.path.abspath(db_path))
 
@@ -106,7 +108,7 @@ class SQLiteHandler(BaseHandler):
             self.logger.warning(f'Table {table_name} not found')
             return None
 
-    def get_tables(self, views: bool = False, **kwargs) -> dict[str, Table]:
+    def get_tables(self, views: bool = False, **kwargs) -> dict[str, Table] | FacadeDict | None:
         metadata = MetaData()
         metadata.reflect(bind=self.engine, views=views, **kwargs)
         tables = metadata.tables
@@ -163,7 +165,7 @@ class SQLiteHandler(BaseHandler):
                 if column.name in current_columns or column.name in new_column_names:
                     self.logger.warning(f'Column {column.name} already exists in table {table.name}')
                     continue
-                op.add_column(table_name, column)
+                op.add_column(table.name, column)
                 new_column_names.append(column.name)
         self.logger.info(f'Added columns {new_column_names} to table {table.name}')
         return new_column_names
@@ -186,7 +188,7 @@ class SQLiteHandler(BaseHandler):
         columns = {k: v for k, v in table.columns.items()}
         return columns
 
-    def alter_column(self, table_name: str, old_column_name: str, new_column_name: str, type_: TypeEngine | Literal['bool', 'int', 'float', 'str', 'datetime', 'time', 'timedelta'] = None, **kwargs) -> str | None:
+    def alter_column(self, table_name: str, old_column_name: str, new_column_name: str, sql_dtype: TypeEngine | PyLiteralType = None, **kwargs) -> str | None:
         table = self.get_table(table_name=table_name, **kwargs)
         if table is None:
             return None
@@ -194,15 +196,18 @@ class SQLiteHandler(BaseHandler):
         if old_column is None:
             return None
         new_column_name = NamingValidator.column(new_column_name)
+        if old_column.name == new_column_name:
+            new_column_name = None
+        if sql_dtype is not None:
+            self.logger.warning('SQLite does not support alter a table column datatype directly. You need to create a new table and copy data from original table')
+            sql_dtype = None
+        if new_column_name is None and sql_dtype is None:
+            self.logger.info(f'Old column {old_column.name=} {old_column.type=} is same with new column in table {table.name}, column remains unchanged')
+            return None
         with self.engine.connect() as conn:
             ctx = MigrationContext.configure(conn)
             op = Operations(ctx)
-            if type_ is not None:
-                raise ValueError('SQLite does not support alter a table column datatype directly. You need to create a new table and copy data from original table')
-            if old_column.name == new_column_name:
-                self.logger.info(f'New column name {new_column_name} is same with old_column_name in table {table.name}, column remains unchanged')
-                return None
-            op.alter_column(table_name, column_name=old_column.name, new_column_name=new_column_name, **kwargs)
+            op.alter_column(table.name, column_name=old_column.name, new_column_name=new_column_name, **kwargs)
             self.logger.info(f'Altered column {old_column.name} to {new_column_name} in table {table.name}')
             return new_column_name
 
@@ -225,7 +230,7 @@ class SQLiteHandler(BaseHandler):
         table = self.get_table(table_name=table_name, **kwargs)
         if table is None:
             return None
-        current_columns = self.get_columns(table_name, **kwargs)
+        current_columns = self.get_columns(table_name=table_name, **kwargs)
         column_names = map(NamingValidator.column, column_names)
         dropped_column_names = []
         with self.engine.connect() as conn:
@@ -238,7 +243,7 @@ class SQLiteHandler(BaseHandler):
                 if column_name in dropped_column_names:
                     self.logger.warning(f'Column {column_name} is already dropped from table {table.name}')
                     continue
-                op.drop_column(table_name, column_name, **kwargs)
+                op.drop_column(table.name, column_name, **kwargs)
                 dropped_column_names.append(column_name)
             self.logger.info(f'Dropped columns {dropped_column_names} from table {table.name}')
             return dropped_column_names
@@ -248,16 +253,16 @@ class SQLiteHandler(BaseHandler):
         table = self.get_table(table_name=table_name, **kwargs)
         if table is None:
             return None
-        current_columns = self.get_columns(table_name, **kwargs)
+        current_columns = self.get_columns(table_name=table_name, **kwargs)
         column_names = map(NamingValidator.column, column_names)
         index_column_names = []
         for column_name in column_names:
             if column_name not in current_columns:
-                raise ValueError(f'Column {column_name} is not in {table_name}')
+                raise ValueError(f'Column {column_name} is not in {table.name}')
             if column_name in index_column_names:
                 raise ValueError(f'Column {column_name} is duplicated')
             index_column_names.append(column_name)
-        idx_name = 'ix_{}_{}'.format(table_name, '_'.join(index_column_names))
+        idx_name = 'ix_{}_{}'.format(table.name, '_'.join(index_column_names))
         if idx_name in self.get_indexes(table_name=table_name, **kwargs):
             raise ValueError(f'Index {idx_name} already exists')
         with self.engine.connect() as conn:
@@ -275,7 +280,7 @@ class SQLiteHandler(BaseHandler):
         return indexes
 
     def drop_index(self, table_name: str, column_names: list[str], **kwargs) -> str | None:
-        table = self.get_table(table_name, **kwargs)
+        table = self.get_table(table_name=table_name, **kwargs)
         if table is None:
             return None
         current_columns = self.get_columns(table_name=table_name, **kwargs)
@@ -376,7 +381,7 @@ class SQLiteHandler(BaseHandler):
             stmt = table.update().where(where_condition)
             cur = conn.execute(stmt, _set_clauses)
             rowcount = cur.rowcount if isinstance(cur.rowcount, int) else cur.rowcount()
-            self.logger.info(f'Updated {rowcount} rows in table {table_name}')
+            self.logger.info(f'Updated {rowcount} rows in table {table.name}')
             return rowcount
 
     def delete_rows(self, table_name: str, where_clauses: list | tuple | WhereClause = None, **kwargs) -> int | None:
@@ -391,7 +396,7 @@ class SQLiteHandler(BaseHandler):
             stmt = delete(table).where(where_condition)
             cur = conn.execute(stmt)
             rowcount = cur.rowcount if isinstance(cur.rowcount, int) else cur.rowcount()
-            self.logger.info(f'Deleted {rowcount} rows')
+            self.logger.info(f'Deleted {rowcount} rows from table {table.name}')
             return rowcount
 
     # Execute SQL
@@ -408,7 +413,7 @@ class SQLiteHandler(BaseHandler):
             return cols, rows
 
 
-class SQLiteDFHandler(SQLiteHandler):
+class SQLiteDFHandler(SQLiteHandler, BaseDFHandler):
     def __init__(
             self,
             db_path: str = None,
@@ -435,8 +440,11 @@ class SQLiteDFHandler(SQLiteHandler):
             index_column_names: list[str | list[str]] = None,
             unique_column_names: list[str | list[str]] = None,
             insert_rows: bool = True,
+            convert_df: bool = True,
             **kwargs
-    ):
+    ) -> Table:
+        if convert_df:
+            df = df.convert_dtypes()
         columns = df_to_sql_columns(
             df=df,
             table_name=table_name,
@@ -449,20 +457,23 @@ class SQLiteDFHandler(SQLiteHandler):
         )
         table = self.create_table(table_name=table_name, columns=columns, **kwargs)
         if insert_rows:
-            self.df_insert_rows(df=df, table_name=table_name, add_columns=False, on_conflict=None)
+            self.df_insert_rows(df=df, table_name=table_name, add_columns=False, on_conflict=None, convert_df=False)
         return table
 
     def df_add_columns(
             self,
             df: pd.DataFrame,
             table_name: str,
+            convert_df: bool = True,
             **kwargs
     ) -> list[str]:
+        if convert_df:
+            df = df.convert_dtypes()
+        df = df.rename(columns=NamingValidator.column)
         current_columns = self.get_columns(table_name=table_name)
         new_column_names = []
         for column_name in df.columns:
-            _column_name = NamingValidator.column(column_name)
-            if _column_name in current_columns:
+            if column_name in current_columns:
                 continue
             new_column_names.append(column_name)
         new_columns = df_to_sql_columns(df=df[new_column_names], table_name=table_name, **kwargs)
@@ -473,19 +484,9 @@ class SQLiteDFHandler(SQLiteHandler):
             self,
             df: pd.DataFrame,
             table_name: str,
+            convert_df: bool = True,
+            **kwargs
     ):
-        # current_columns = self.get_columns(table_name=table_name)
-        # alter_column_names = []
-        # for column_name in df.columns:
-        #     _column_name = NamingValidator.column(column_name)
-        #     if _column_name not in current_columns:
-        #         continue
-        #     current_column = self.get_column(table_name=table_name, column_name=_column_name)
-        #     new_type = series_to_sql_dtype(df[column_name])
-        #     if isinstance(current_column.type, new_type):
-        #         continue
-        #     alter_column_name = self.alter_column(table_name=table_name, old_column_name=_column_name, new_column_name=_column_name, type_=new_type)
-        #     alter_column_names.append(alter_column_name)
         raise ValueError('SQLite does not support alter a table column datatype directly. You need to create a new table and copy data from original table')
 
     def df_insert_rows(
@@ -494,23 +495,23 @@ class SQLiteDFHandler(SQLiteHandler):
             table_name: str,
             add_columns: bool = True,
             on_conflict: Literal['do_nothing'] = None,
-            copy_df: bool = False,
+            convert_df: bool = True,
             **kwargs
     ) -> int | None:
+        if convert_df:
+            df = df.convert_dtypes()
+        df = df.rename(columns=NamingValidator.column)
+        table_name = NamingValidator.table(table_name)
         table = self.get_table(table_name=table_name, **kwargs)
         if table is None:
             raise ValueError(f'Table {table_name} not found')
         if add_columns:
-            self.df_add_columns(df=df, table_name=table_name)
+            self.df_add_columns(df=df, table_name=table_name, convert_df=False)
         current_columns = self.get_columns(table_name=table_name)
-        subset_columns = [col for col in df.columns if NamingValidator.column(col) in current_columns]
-        if copy_df:
-            _df = df.copy()
-        else:
-            _df = df
+        subset_columns = [col for col in df.columns if col in current_columns]
         for col in subset_columns:
-            if isinstance(current_columns[NamingValidator.column(col)].type, DateTime):
-                _df[col] = pd.to_datetime(_df[col])
-        rows = _df[subset_columns].where(pd.notnull(_df[subset_columns]), None).rename(columns=NamingValidator.column).to_dict(orient='records')
-        rowcount = self.insert_rows(table_name=table_name, rows=rows, on_conflict=on_conflict, **kwargs)
+            if isinstance(current_columns[col].type, DateTime):
+                df[col] = pd.to_datetime(df[col])
+        rows = df[subset_columns].where(pd.notnull(df[subset_columns]), None).to_dict(orient='records')
+        rowcount = self.insert_rows(table_name=table.name, rows=rows, on_conflict=on_conflict, **kwargs)
         return rowcount

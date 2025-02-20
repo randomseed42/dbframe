@@ -1,38 +1,25 @@
 import re
 from datetime import datetime, time, timedelta
-from typing import Literal, NamedTuple, Sequence
+from typing import Literal, NamedTuple, Sequence, Any
 
 import numpy as np
 import pandas as pd
-from sqlalchemy import Boolean, Column, Constraint, DateTime, Float, Index, Integer, String, Table, Text, Time, \
-    UniqueConstraint, and_, or_, true
+from sqlalchemy import (
+    Boolean, Column, Constraint, DateTime, Float, Index, Integer, String, Table, Text, Time, UniqueConstraint,
+    and_, or_, true
+)
 from sqlalchemy.sql.sqltypes import TypeEngine
 
-WhereOperator = Literal[
-    '==',
-    '!=',
-    '<',
-    '<=',
-    '>',
-    '>=',
-    'in',
-    'not in',
-    'like',
-    'not like',
-    'ilike',
-    'not ilike',
-    'between',
-    'is',
-    'is not',
-]
+from .types import WhereOperator
 
-OPERATORS_MAP = {
+
+OPERATORS_MAP: dict[WhereOperator, str] = {
     '==': '__eq__',
     '!=': '__ne__',
-    '>': '__gt__',
-    '>=': '__ge__',
     '<': '__lt__',
     '<=': '__le__',
+    '>': '__gt__',
+    '>=': '__ge__',
     'in': 'in_',
     'not in': 'not_in',
     'like': 'like',
@@ -41,7 +28,7 @@ OPERATORS_MAP = {
     'not ilike': 'not_ilike',
     'between': 'between',
     'is': 'is_',
-    'is_not': 'is_not',
+    'is not': 'is_not',
 }
 
 
@@ -137,7 +124,7 @@ class NamingValidator:
 """
 Pandas dtypes include @register_extension_dtype
 """
-SQL_DTYPE_MAP = {
+SQL_DTYPE_MAP: dict[Any, TypeEngine] = {
     # Bool Types
     'bool': Boolean,
     bool: Boolean,
@@ -188,6 +175,7 @@ SQL_DTYPE_MAP = {
 
     # Time Types
     'time': Time,
+    'timedelta': Time,
     time: Time,
     timedelta: Time,
     np.timedelta64: Time,

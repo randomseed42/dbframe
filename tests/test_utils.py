@@ -115,10 +115,7 @@ class TestUtils(unittest.TestCase):
             (pd.MultiIndex.from_product([['a', 'b'], [0, 1]]), String),
         ]
         for i, (x, t) in enumerate(cases):
-            try:
-                self.assertEqual(series_to_sql_dtype(x), t)
-            except Exception:
-                breakpoint()
+            self.assertEqual(series_to_sql_dtype(x), t)
 
     def test_series_to_sql_dtype_datetime(self):
         cases = [
