@@ -6,6 +6,7 @@ from sqlalchemy import Column, Row, Table
 from sqlalchemy.util import FacadeDict
 
 from .logger import Logger
+from .types import LogLevelType
 from .utils import OrderByClause, WhereClause
 
 
@@ -13,7 +14,7 @@ class BaseHandler(ABC):
     def __init__(
             self,
             log_name: str = 'Logger',
-            log_level: str = None,
+            log_level: LogLevelType = None,
             log_console: bool = False,
             log_file: str = None,
     ):

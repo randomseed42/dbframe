@@ -1,5 +1,5 @@
 import os
-from typing import Any, Literal
+from typing import Any, Literal, Type
 
 import pandas as pd
 from alembic.migration import MigrationContext
@@ -11,8 +11,11 @@ from sqlalchemy.sql.sqltypes import TypeEngine
 from sqlalchemy.util import FacadeDict
 
 from .base_handler import BaseDFHandler, BaseHandler
-from .types import PyLiteralType
-from .utils import NamingValidator, OrderByClause, WhereClause, df_to_sql_columns, order_by_parser, where_clauses_parser
+from .types import LogLevelType, PyLiteralType
+from .utils import (
+    NamingValidator, OrderByClause, WhereClause,
+    df_to_sql_columns, order_by_parser, where_clauses_parser
+)
 
 
 class SQLiteHandler(BaseHandler):
@@ -20,7 +23,7 @@ class SQLiteHandler(BaseHandler):
             self,
             db_path: str = None,
             log_name: str = 'Logger',
-            log_level: str = None,
+            log_level: LogLevelType = None,
             log_console: bool = False,
             log_file: str = None,
     ):
@@ -30,6 +33,7 @@ class SQLiteHandler(BaseHandler):
         self.engine = create_engine(
             self.url,
             isolation_level='AUTOCOMMIT',
+            connect_args={'check_same_thread': False},
         )
         self._validate_connection()
 
@@ -40,7 +44,7 @@ class SQLiteHandler(BaseHandler):
         url_template = 'sqlite:///{}'
         if db_path == ":memory:":
             return url_template.format(':memory:')
-        return url_template.format(os.path.abspath(db_path))
+        return url_template.format(os.path.abspath(os.path.normpath(db_path)))
 
     def _validate_connection(self):
         try:
@@ -54,29 +58,26 @@ class SQLiteHandler(BaseHandler):
     # Database CRUD
     def create_database(self, db_path: str, **kwargs) -> str | None:
         url = self._generate_url(db_path=db_path)
-        abs_db_path = os.path.abspath(db_path)
+        abs_db_path = os.path.abspath(os.path.normpath(db_path))
         if os.path.exists(abs_db_path):
             self.logger.warning(f'The db_path {abs_db_path} already exists')
             return None
-        engine = create_engine(
-            url,
-            isolation_level='AUTOCOMMIT',
-        )
+        engine = create_engine(url, isolation_level='AUTOCOMMIT')
         with engine.connect() as conn:
             conn.execute(text('SELECT 1'))
             self.logger.info('Connection successful')
         engine.dispose()
         return abs_db_path
 
-    def get_database(self, db_path, **kwargs) -> str | None:
-        abs_db_path = os.path.abspath(db_path)
+    def get_database(self, db_path: str, **kwargs) -> str | None:
+        abs_db_path = os.path.abspath(os.path.normpath(db_path))
         if not os.path.exists(abs_db_path):
             self.logger.warning(f'The db_path {abs_db_path} does not exists')
             return None
         return abs_db_path
 
     def drop_database(self, db_path: str, **kwargs) -> str | None:
-        abs_db_path = os.path.abspath(db_path)
+        abs_db_path = os.path.abspath(os.path.normpath(db_path))
         if not os.path.exists(abs_db_path):
             self.logger.warning(f'The db_path {abs_db_path} does not exists')
             return None
@@ -111,8 +112,7 @@ class SQLiteHandler(BaseHandler):
     def get_tables(self, views: bool = False, **kwargs) -> dict[str, Table] | FacadeDict | None:
         metadata = MetaData()
         metadata.reflect(bind=self.engine, views=views, **kwargs)
-        tables = metadata.tables
-        return tables
+        return metadata.tables
 
     def rename_table(self, old_table_name: str, new_table_name: str, **kwargs) -> str | None:
         old_table_name = NamingValidator.table(old_table_name)
@@ -185,10 +185,16 @@ class SQLiteHandler(BaseHandler):
         table = self.get_table(table_name=table_name, **kwargs)
         if table is None:
             return None
-        columns = {k: v for k, v in table.columns.items()}
-        return columns
+        return {k: v for k, v in table.columns.items()}
 
-    def alter_column(self, table_name: str, old_column_name: str, new_column_name: str, sql_dtype: TypeEngine | PyLiteralType = None, **kwargs) -> str | None:
+    def alter_column(
+            self,
+            table_name: str,
+            old_column_name: str,
+            new_column_name: str,
+            sql_dtype: TypeEngine | Type[TypeEngine] | PyLiteralType = None,
+            **kwargs
+    ) -> str | None:
         table = self.get_table(table_name=table_name, **kwargs)
         if table is None:
             return None
@@ -199,7 +205,7 @@ class SQLiteHandler(BaseHandler):
         if old_column.name == new_column_name:
             new_column_name = None
         if sql_dtype is not None:
-            self.logger.warning('SQLite does not support alter a table column datatype directly. You need to create a new table and copy data from original table')
+            self.logger.warning('SQLite does not support altering a table column datatype directly. You need to create a new table and copy data from original table')
             sql_dtype = None
         if new_column_name is None and sql_dtype is None:
             self.logger.info(f'Old column {old_column.name=} {old_column.type=} is same with new column in table {table.name}, column remains unchanged')
@@ -418,7 +424,7 @@ class SQLiteDFHandler(SQLiteHandler, BaseDFHandler):
             self,
             db_path: str = None,
             log_name: str = 'Logger',
-            log_level: str = None,
+            log_level: LogLevelType = None,
             log_console: bool = False,
             log_file: str = None,
     ):
@@ -515,3 +521,12 @@ class SQLiteDFHandler(SQLiteHandler, BaseDFHandler):
         rows = df[subset_columns].where(pd.notnull(df[subset_columns]), None).to_dict(orient='records')
         rowcount = self.insert_rows(table_name=table.name, rows=rows, on_conflict=on_conflict, **kwargs)
         return rowcount
+
+    def df_select_rows(self, table_name: str, column_names: list[str] = None, where_clauses: list | tuple | WhereClause = None, order_by: list[OrderByClause] = None, offset: int = None, limit: int = None, **kwargs) -> pd.DataFrame | None:
+        cols, rows = self.select_rows(table_name=table_name, column_names=column_names, where_clauses=where_clauses, order_by=order_by, offset=offset, limit=limit, **kwargs)
+        if cols is None or rows is None:
+            return None
+        df = pd.DataFrame(data=rows, columns=cols)
+        return df
+
+

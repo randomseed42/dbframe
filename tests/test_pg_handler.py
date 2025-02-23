@@ -2,6 +2,7 @@ import os
 import unittest
 from datetime import datetime
 from logging import FileHandler
+from xmlrpc.client import FastParser
 
 import pandas as pd
 from dbframe import PGDFHandler
@@ -528,7 +529,7 @@ class TestPGDFHandler(unittest.TestCase):
         ]
         columns = ['nAmE', 'AgE', 'height', 'weight']
         df = pd.DataFrame(data=data, columns=columns)
-        rowcount = self.db.df_insert_rows(df=df, schema=self.schema, table_name=temp_table_name, on_conflict='do_nothing')
+        rowcount = self.db.df_insert_rows(df=df, schema=self.schema, table_name=temp_table_name, on_conflict='do_nothing', fast_copy=False)
         self.assertEqual(rowcount, 4)
         self.db.drop_table(schema=self.schema, table_name=temp_table_name)
 
@@ -552,9 +553,45 @@ class TestPGDFHandler(unittest.TestCase):
         columns = ['nAmE', 'AgE', 'height', 'weight']
         df = pd.DataFrame(data=data, columns=columns)
         with self.assertRaisesRegex(IntegrityError, 'duplicate key value violates unique constraint'):
-            rowcount = self.db.df_insert_rows(df=df, schema=self.schema, table_name=temp_table_name, on_conflict=None)
+            rowcount = self.db.df_insert_rows(df=df, schema=self.schema, table_name=temp_table_name, on_conflict=None, fast_copy=False)
             self.db.logger.critical(rowcount)
         self.db.drop_table(schema=self.schema, table_name=temp_table_name)
+
+        # Case 3
+        temp_table_name = 'tEmP'
+        table = self.db.df_create_table(
+            df=self.df, schema=self.schema, table_name=temp_table_name,
+            primary_column_name='index', primary_sql_column_name='uid',
+            notnull_column_names=['nAmE', 'aGe'],
+            index_column_names=['nAmE', ['aGe', 'height']],
+            unique_column_names=['nAmE', ['aGe', 'height']],
+        )
+
+        data = [
+            ['Joan', 17.7, 1.75, '70'],
+            ['Jess', 18.1, 1.80, '80'],
+            ['July', 19.2, 1.66, '60'],
+            ['Jake', 19.3, 1.68, None],
+        ]
+        columns = ['nAmE', 'AgE', 'height', 'weight']
+        df = pd.DataFrame(data=data, columns=columns)
+        rowcount = self.db.df_insert_rows(df=df, schema=self.schema, table_name=temp_table_name, on_conflict=None,
+                                          fast_copy=False)
+        self.assertEqual(rowcount, 4)
+        self.db.drop_table(schema=self.schema, table_name=temp_table_name)
+
+    def test_df_select_rows(self):
+        temp_table_name = 'tEmP'
+        table = self.db.df_create_table(
+            df=self.df, schema=self.schema, table_name=temp_table_name,
+            primary_column_name='index', primary_sql_column_name='uid',
+            notnull_column_names=['nAmE', 'aGe'],
+            index_column_names=['nAmE', ['aGe', 'height']],
+            unique_column_names=['nAmE', ['aGe', 'height']],
+        )
+
+        df = self.db.df_select_rows(schema=self.schema, table_name=temp_table_name, column_names=['nAmE', 'AgE', 'height'], where_clauses=[WhereClause('age', '<', 19)], order_by=[OrderByClause(column_name='age', ascending=False)])
+        self.assertEqual(len(df), 3)
 
 
 if __name__ == '__main__':

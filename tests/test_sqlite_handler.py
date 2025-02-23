@@ -460,6 +460,19 @@ class TestSQLiteDFHandler(unittest.TestCase):
             self.db.logger.critical(rowcount)
         self.db.drop_table(table_name=temp_table_name)
 
+    def test_df_select_rows(self):
+        temp_table_name = 'tEmP'
+        table = self.db.df_create_table(
+            df=self.df, table_name=temp_table_name,
+            primary_column_name='index', primary_sql_column_name='uid',
+            notnull_column_names=['nAmE', 'aGe'],
+            index_column_names=['nAmE', ['aGe', 'height']],
+            unique_column_names=['nAmE', ['aGe', 'height']],
+        )
+
+        df = self.db.df_select_rows(table_name=temp_table_name, column_names=['nAmE', 'AgE', 'height'], where_clauses=[WhereClause('age', '<', 19)], order_by=[OrderByClause(column_name='age', ascending=False)])
+        self.assertEqual(len(df), 3)
+
 
 if __name__ == '__main__':
     unittest.main()

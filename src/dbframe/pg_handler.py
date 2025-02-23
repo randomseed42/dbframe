@@ -1,10 +1,13 @@
 import os
+from io import StringIO
 from typing import Any, Literal, Type
 from urllib.parse import quote_plus
 
 import pandas as pd
+import psycopg2
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+# from psycopg2.errors import BadCopyFileFormat
 from sqlalchemy import Column, DateTime, MetaData, Row, Table, create_engine, delete, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import NoSuchTableError
@@ -12,7 +15,7 @@ from sqlalchemy.sql.sqltypes import TypeEngine
 from sqlalchemy.util import FacadeDict
 
 from .base_handler import BaseDFHandler, BaseHandler
-from .types import PyLiteralType
+from .types import LogLevelType, PyLiteralType
 from .utils import (
     NamingValidator, OrderByClause, SQL_DTYPE_MAP, WhereClause,
     df_to_sql_columns, order_by_parser, series_to_sql_dtype, where_clauses_parser
@@ -28,7 +31,7 @@ class PGHandler(BaseHandler):
             password: str = None,
             dbname: str = None,
             log_name: str = 'Logger',
-            log_level: str = None,
+            log_level: LogLevelType = None,
             log_console: bool = False,
             log_file: str = None,
     ):
@@ -43,8 +46,8 @@ class PGHandler(BaseHandler):
         self.url_default = self._generate_url(dbname='postgres')
         self.engine = create_engine(
             self.url,
-            executemany_mode='values_plus_batch',
             isolation_level='AUTOCOMMIT',
+            executemany_mode='values_plus_batch',
         )
         self._validate_connection()
 
@@ -185,8 +188,7 @@ class PGHandler(BaseHandler):
             return None
         metadata = MetaData(schema=schema)
         metadata.reflect(bind=self.engine, views=views, **kwargs)
-        tables = metadata.tables
-        return tables
+        return metadata.tables
 
     def rename_table(self, schema: str, old_table_name: str, new_table_name: str, **kwargs) -> str | None:
         schema = self.get_schema(schema=schema)
@@ -262,8 +264,7 @@ class PGHandler(BaseHandler):
         table = self.get_table(schema=schema, table_name=table_name, **kwargs)
         if table is None:
             return None
-        columns = {k: v for k, v in table.columns.items()}
-        return columns
+        return {k: v for k, v in table.columns.items()}
 
     def alter_column(
             self,
@@ -514,7 +515,7 @@ class PGDFHandler(PGHandler, BaseDFHandler):
             password: str = None,
             dbname: str = None,
             log_name: str = 'Logger',
-            log_level: str = None,
+            log_level: LogLevelType = None,
             log_console: bool = False,
             log_file: str = None,
     ):
@@ -606,6 +607,27 @@ class PGDFHandler(PGHandler, BaseDFHandler):
             alter_column_names.append(alter_column_name)
         return alter_column_names
 
+    def _df_copy_rows(
+            self,
+            df: pd.DataFrame,
+            schema: str,
+            table_name: str,
+    ):
+        with StringIO() as buf:
+            df.to_csv(buf, index=False, header=False, sep='\t')
+            buf.seek(0)
+            with psycopg2.connect(
+                    host=self.host,
+                    port=self.port,
+                    user=self.user,
+                    password=self.password,
+                    dbname=self.dbname
+            ) as conn:
+                conn.autocommit = True
+                cursor = conn.cursor()
+                cursor.execute(f'SET search_path TO {schema}')
+                cursor.copy_from(buf, table_name, sep='\t', null='', columns=df.columns)
+
     def df_insert_rows(
             self,
             df: pd.DataFrame,
@@ -615,6 +637,7 @@ class PGDFHandler(PGHandler, BaseDFHandler):
             alter_columns_dtype: bool = True,
             on_conflict: Literal['do_nothing'] = None,
             convert_df: bool = True,
+            fast_copy: bool = True,
             **kwargs
     ) -> int | None:
         if convert_df:
@@ -634,6 +657,20 @@ class PGDFHandler(PGHandler, BaseDFHandler):
         for col in subset_columns:
             if isinstance(current_columns[col].type, DateTime):
                 df[col] = pd.to_datetime(df[col])
+        if fast_copy:
+            try:
+                self._df_copy_rows(df=df, schema=schema, table_name=table_name)
+                return len(df)
+            except Exception as err:
+                self.logger.critical(f'copy rows failed: {err}, switch to insert mode')
+                raise err
         rows = df[subset_columns].where(pd.notnull(df[subset_columns]), None).to_dict(orient='records')
         rowcount = self.insert_rows(schema=schema, table_name=table.name, rows=rows, on_conflict=on_conflict, **kwargs)
         return rowcount
+
+    def df_select_rows(self, schema: str, table_name: str, column_names: list[str] = None, where_clauses: list | tuple | WhereClause = None, order_by: list[OrderByClause] = None, offset: int = None, limit: int = None, **kwargs) -> pd.DataFrame | None:
+        cols, rows = self.select_rows(schema=schema, table_name=table_name, column_names=column_names, where_clauses=where_clauses, order_by=order_by, offset=offset, limit=limit, **kwargs)
+        if cols is None or rows is None:
+            return None
+        df = pd.DataFrame(data=rows, columns=cols)
+        return df
