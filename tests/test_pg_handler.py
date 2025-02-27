@@ -2,7 +2,6 @@ import os
 import unittest
 from datetime import datetime
 from logging import FileHandler
-from xmlrpc.client import FastParser
 
 import pandas as pd
 from dbframe import PGDFHandler
@@ -186,6 +185,17 @@ class TestPGHandler(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, 'Table.*already exists.*'):
             self.db.create_table(schema=self.schema, table_name='users', columns=self._generate_columns())
+
+    def test_db_truncate_table(self):
+        temp_table = 'Temp_Table'
+        self.db.create_table(schema=self.schema, table_name=temp_table, columns=self._generate_columns())
+        self.assertTrue(self.db.get_table(schema=self.schema, table_name=temp_table) is not None)
+
+        self.db.truncate_table(schema=self.schema, table_name=temp_table)
+        cols, rows = self.db.select_rows(schema=self.schema, table_name=temp_table)
+        self.assertEqual(len(rows), 0)
+
+        self.db.drop_table(schema=self.schema, table_name=temp_table)
 
     # Column CRUD
     def test_db_add_column(self):
@@ -480,7 +490,7 @@ class TestPGDFHandler(unittest.TestCase):
 
     def test_df_add_columns(self):
         temp_table_name = 'tEmP'
-        table = self.db.df_create_table(df=self.df, schema=self.schema, table_name=temp_table_name)
+        self.db.df_create_table(df=self.df, schema=self.schema, table_name=temp_table_name)
         data = [
             ['John', 17, 1.75, 70],
             ['Jack', 18, 1.80, 80],
@@ -495,7 +505,7 @@ class TestPGDFHandler(unittest.TestCase):
 
     def test_df_alter_columns_type(self):
         temp_table_name = 'tEmP'
-        table = self.db.df_create_table(df=self.df, schema=self.schema, table_name=temp_table_name)
+        self.db.df_create_table(df=self.df, schema=self.schema, table_name=temp_table_name)
         data = [
             ['John', 17.8, 1.75, 70],
             ['Jack', 18, 1.80, 80],
@@ -512,7 +522,7 @@ class TestPGDFHandler(unittest.TestCase):
     def test_df_insert_rows(self):
         # Case 1
         temp_table_name = 'tEmP'
-        table = self.db.df_create_table(
+        self.db.df_create_table(
             df=self.df, schema=self.schema, table_name=temp_table_name,
             primary_column_name='index', primary_sql_column_name='uid',
             notnull_column_names=['nAmE', 'aGe'],
@@ -535,7 +545,7 @@ class TestPGDFHandler(unittest.TestCase):
 
         # Case 2
         temp_table_name = 'tEmP'
-        table = self.db.df_create_table(
+        self.db.df_create_table(
             df=self.df, schema=self.schema, table_name=temp_table_name,
             primary_column_name='index', primary_sql_column_name='uid',
             notnull_column_names=['nAmE', 'aGe'],
@@ -559,7 +569,7 @@ class TestPGDFHandler(unittest.TestCase):
 
         # Case 3
         temp_table_name = 'tEmP'
-        table = self.db.df_create_table(
+        self.db.df_create_table(
             df=self.df, schema=self.schema, table_name=temp_table_name,
             primary_column_name='index', primary_sql_column_name='uid',
             notnull_column_names=['nAmE', 'aGe'],
@@ -582,7 +592,7 @@ class TestPGDFHandler(unittest.TestCase):
 
     def test_df_select_rows(self):
         temp_table_name = 'tEmP'
-        table = self.db.df_create_table(
+        self.db.df_create_table(
             df=self.df, schema=self.schema, table_name=temp_table_name,
             primary_column_name='index', primary_sql_column_name='uid',
             notnull_column_names=['nAmE', 'aGe'],

@@ -135,6 +135,18 @@ class SQLiteHandler(BaseHandler):
         self.logger.info(f'Table {table.name} dropped')
         return table.name
 
+    def truncate_table(self, table_name: str, restart: bool = True, **kwargs) -> str | None:
+        table = self.get_table(table_name=table_name, **kwargs)
+        if table is None:
+            return None
+        with self.engine.connect() as conn:
+            conn.execute(text(f'DELETE FROM {table.name};'))
+            if restart:
+                if self.get_table(table_name='sqlite_sequence') is not None:
+                    conn.execute(text(f"DELETE FROM sqlite_sequence WHERE name='{table.name}';"))
+            self.logger.info(f'Table {table.name} truncated')
+            return table.name
+
     # Column CRUD
     def add_column(self, table_name: str, column: Column, **kwargs) -> str | None:
         table = self.get_table(table_name=table_name, **kwargs)
@@ -442,6 +454,7 @@ class SQLiteDFHandler(SQLiteHandler, BaseDFHandler):
             table_name: str,
             primary_column_name: str | Literal['index'] = None,
             primary_sql_column_name: str = None,
+            primary_column_autoincrement: bool | Literal['auto'] = 'auto',
             notnull_column_names: list[str] = None,
             index_column_names: list[str | list[str]] = None,
             unique_column_names: list[str | list[str]] = None,
@@ -456,6 +469,7 @@ class SQLiteDFHandler(SQLiteHandler, BaseDFHandler):
             table_name=table_name,
             primary_column_name=primary_column_name,
             primary_sql_column_name=primary_sql_column_name,
+            primary_column_autoincrement=primary_column_autoincrement,
             notnull_column_names=notnull_column_names,
             index_column_names=index_column_names,
             unique_column_names=unique_column_names,

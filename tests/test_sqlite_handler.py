@@ -21,7 +21,7 @@ class TestSQLiteHandler(unittest.TestCase):
     @staticmethod
     def _generate_columns() -> list[Column]:
         return [
-            Column('uid', Integer, primary_key=True),
+            Column('uid', Integer, primary_key=True, autoincrement=True),
             Column('user', String),
             Column('register_datetime', DateTime),
         ]
@@ -126,6 +126,11 @@ class TestSQLiteHandler(unittest.TestCase):
     def test_db_drop_table(self):
         self.db.drop_table(table_name=self.table_name)
         self.assertIsNone(self.db.get_table(table_name=self.table_name))
+
+    def test_db_truncate_table(self):
+        self.db.truncate_table(table_name=self.table_name)
+        cols, rows = self.db.select_rows(table_name=self.table_name)
+        self.assertEqual(len(rows), 0)
 
     # Column CRUD
     def test_db_add_column(self):
@@ -384,7 +389,7 @@ class TestSQLiteDFHandler(unittest.TestCase):
 
     def test_df_add_columns(self):
         temp_table_name = 'tEmP'
-        table = self.db.df_create_table(df=self.df, table_name=temp_table_name)
+        self.db.df_create_table(df=self.df, table_name=temp_table_name)
         data = [
             ['John', 17, 1.75, 70],
             ['Jack', 18, 1.80, 80],
@@ -399,7 +404,7 @@ class TestSQLiteDFHandler(unittest.TestCase):
 
     def test_df_alter_columns_type(self):
         temp_table_name = 'tEmP'
-        table = self.db.df_create_table(df=self.df, table_name=temp_table_name)
+        self.db.df_create_table(df=self.df, table_name=temp_table_name)
         data = [
             ['John', 17.8, 1.75, 70],
             ['Jack', 18, 1.80, 80],
@@ -415,7 +420,7 @@ class TestSQLiteDFHandler(unittest.TestCase):
     def test_df_insert_rows(self):
         # Case 1
         temp_table_name = 'tEmP'
-        table = self.db.df_create_table(
+        self.db.df_create_table(
             df=self.df, table_name=temp_table_name,
             primary_column_name='index', primary_sql_column_name='uid',
             notnull_column_names=['nAmE', 'aGe'],
@@ -438,7 +443,7 @@ class TestSQLiteDFHandler(unittest.TestCase):
 
         # Case 2
         temp_table_name = 'tEmP'
-        table = self.db.df_create_table(
+        self.db.df_create_table(
             df=self.df, table_name=temp_table_name,
             primary_column_name='index', primary_sql_column_name='uid',
             notnull_column_names=['nAmE', 'aGe'],
@@ -462,7 +467,7 @@ class TestSQLiteDFHandler(unittest.TestCase):
 
     def test_df_select_rows(self):
         temp_table_name = 'tEmP'
-        table = self.db.df_create_table(
+        self.db.df_create_table(
             df=self.df, table_name=temp_table_name,
             primary_column_name='index', primary_sql_column_name='uid',
             notnull_column_names=['nAmE', 'aGe'],

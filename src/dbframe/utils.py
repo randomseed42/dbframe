@@ -1,6 +1,6 @@
 import re
 from datetime import datetime, time, timedelta
-from typing import Literal, NamedTuple, Sequence, Any
+from typing import Any, Literal, NamedTuple, Sequence
 
 import numpy as np
 import pandas as pd
@@ -11,7 +11,6 @@ from sqlalchemy import (
 from sqlalchemy.sql.sqltypes import TypeEngine
 
 from .types import WhereOperator
-
 
 OPERATORS_MAP: dict[WhereOperator, str] = {
     '==': '__eq__',
@@ -211,20 +210,20 @@ def series_to_sql_dtype(s: np.typing.NDArray | pd.Series | pd.DatetimeIndex | pd
     return sql_dtype
 
 
-def _df_to_sql_primary_column(df: pd.DataFrame, df_column_name: str | Literal['index'] = None, sql_column_name: str = None, **kwargs) -> Column | None:
+def _df_to_sql_primary_column(df: pd.DataFrame, df_column_name: str | Literal['index'] = None, sql_column_name: str = None, autoincrement: bool | Literal['auto'] = 'auto', **kwargs) -> Column | None:
     if df_column_name is None:
         return None
     if df_column_name == 'index':
         column_name = sql_column_name or 'uid'
         column_name = NamingValidator.column(column_name)
         sql_dtype = series_to_sql_dtype(df.index, **kwargs)
-        return Column(column_name, sql_dtype, primary_key=True, nullable=False, autoincrement='auto')
+        return Column(column_name, sql_dtype, primary_key=True, nullable=False, autoincrement=autoincrement)
     if df_column_name not in df.columns:
         raise ValueError(f'Column {df_column_name} does not exist in df')
     column_name = sql_column_name or str(df_column_name)
     column_name = NamingValidator.column(column_name)
     sql_dtype = series_to_sql_dtype(df[df_column_name], **kwargs)
-    return Column(column_name, sql_dtype, primary_key=True, nullable=False, autoincrement='auto')
+    return Column(column_name, sql_dtype, primary_key=True, nullable=False, autoincrement=autoincrement)
 
 
 def _df_to_sql_index(df: pd.DataFrame, df_column_names: str | list[str], table_name: str) -> Index | None:
@@ -264,6 +263,7 @@ def df_to_sql_columns(
         table_name: str,
         primary_column_name: str | Literal['index'] = None,
         primary_sql_column_name: str = None,
+        primary_column_autoincrement: bool | Literal['auto'] = 'auto',
         notnull_column_names: list[str] = None,
         index_column_names: list[str | list[str]] = None,
         unique_column_names: list[str | list[str]] = None,
@@ -271,7 +271,12 @@ def df_to_sql_columns(
 ) -> list[Column | Constraint | Index] | None:
     table_name = NamingValidator.table(table_name)
     schema_items = []
-    primary_column = _df_to_sql_primary_column(df=df, df_column_name=primary_column_name, sql_column_name=primary_sql_column_name)
+    primary_column = _df_to_sql_primary_column(
+        df=df,
+        df_column_name=primary_column_name,
+        sql_column_name=primary_sql_column_name,
+        autoincrement=primary_column_autoincrement
+    )
     if primary_column is not None:
         schema_items.append(primary_column)
     if notnull_column_names is None:

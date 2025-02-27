@@ -214,6 +214,19 @@ class PGHandler(BaseHandler):
         self.logger.info(f'Table {table.schema}.{table.name} dropped')
         return table.name
 
+    def truncate_table(self, schema: str, table_name: str, restart: bool = True, **kwargs) -> str | None:
+        table = self.get_table(schema=schema, table_name=table_name, **kwargs)
+        if table is None:
+            return None
+        with self.engine.connect() as conn:
+            if restart:
+                stmt = text(f'TRUNCATE TABLE {table.schema}.{table.name} RESTART IDENTITY;')
+            else:
+                stmt = text(f'TRUNCATE TABLE {table.schema}.{table.name};')
+            conn.execute(stmt)
+            self.logger.info(f'Table {table.schema}.{table.name} truncated')
+            return table.name
+
     # Column CRUD
     def add_column(self, schema: str, table_name: str, column: Column, **kwargs) -> str | None:
         table = self.get_table(schema=schema, table_name=table_name, **kwargs)
