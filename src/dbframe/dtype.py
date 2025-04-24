@@ -48,7 +48,7 @@ from sqlalchemy import (
     UnicodeText,
     Uuid,
 )
-from sqlalchemy.sql.sqltypes import TypeEngine
+from sqlalchemy.sql.sqltypes import TypeEngine, DATETIME_TIMEZONE, TIME_TIMEZONE
 
 
 def dtype_sql_to_py(sql_dtype: TypeEngine | type) -> type:
@@ -145,6 +145,7 @@ DTYPE_PANDAS_TO_SQL_MAPPER = {
     pd.StringDtype(): String,
     pd.Float32Dtype(): Float,
     pd.Float64Dtype(): Float,
+    pd.Timestamp: DateTime,
     pd.DatetimeTZDtype: DateTime,
     pd.DatetimeIndex: DateTime,
 }
@@ -163,13 +164,23 @@ def object_to_sql_dtype(obj: Any) -> TypeEngine:
         pd_type = obj.dtype
         if pd_type in DTYPE_PANDAS_TO_SQL_MAPPER:
             return DTYPE_PANDAS_TO_SQL_MAPPER[pd_type]
-        np_type = pd_type.type
-        if np_type is np.object_:
+        sub_type = pd_type.type
+        if sub_type is np.object_:
             inferred_pd_type = obj.convert_dtypes().dtype
             if inferred_pd_type is np.dtype('O'):
                 return JSON
             if inferred_pd_type in DTYPE_PANDAS_TO_SQL_MAPPER:
                 return DTYPE_PANDAS_TO_SQL_MAPPER[inferred_pd_type]
-        if np_type in DTYPE_NUMPY_TO_SQL_MAPPER:
-            return DTYPE_NUMPY_TO_SQL_MAPPER[np_type]
+        if sub_type in DTYPE_NUMPY_TO_SQL_MAPPER:
+            return DTYPE_NUMPY_TO_SQL_MAPPER[sub_type]
+        if sub_type is pd.Timestamp:
+            if pd_type.tz is None:
+                return DateTime
+            else:
+                return DATETIME_TIMEZONE
         raise TypeError(f'pandas series dtype {pd_type} not supported yet')
+    if isinstance(obj, pd.DatetimeIndex):
+        if obj.tz is None:
+            return DateTime
+        else:
+            return DATETIME_TIMEZONE

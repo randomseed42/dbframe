@@ -180,74 +180,74 @@ class TestDtype:
         pytest.raises(AttributeError, dtype_sql_to_str, TupleType)
 
     def test_object_to_sql_dtype(self):
-        # assert object_to_sql_dtype(bool) is Boolean
-        # assert object_to_sql_dtype(int) is Integer
-        # assert object_to_sql_dtype(str) is String
-        # assert object_to_sql_dtype(float) is Float
-        # assert object_to_sql_dtype(datetime.datetime) is DateTime
-        # assert object_to_sql_dtype(datetime.date) is Date
-        # assert object_to_sql_dtype(datetime.time) is Time
-        # assert object_to_sql_dtype(bytes) is LargeBinary
-        # assert object_to_sql_dtype(uuid.UUID) is Uuid
-        # assert object_to_sql_dtype(list) is ARRAY
-        # assert object_to_sql_dtype(dict) is JSON
+        assert object_to_sql_dtype(bool) is Boolean
+        assert object_to_sql_dtype(int) is Integer
+        assert object_to_sql_dtype(str) is String
+        assert object_to_sql_dtype(float) is Float
+        assert object_to_sql_dtype(datetime.datetime) is DateTime
+        assert object_to_sql_dtype(datetime.date) is Date
+        assert object_to_sql_dtype(datetime.time) is Time
+        assert object_to_sql_dtype(bytes) is LargeBinary
+        assert object_to_sql_dtype(uuid.UUID) is Uuid
+        assert object_to_sql_dtype(list) is ARRAY
+        assert object_to_sql_dtype(dict) is JSON
 
-        # assert object_to_sql_dtype('bool') is Boolean
-        # assert object_to_sql_dtype('boolean') is Boolean
-        # assert object_to_sql_dtype('int') is Integer
-        # assert object_to_sql_dtype('bigint') is Integer
-        # assert object_to_sql_dtype('big_integer') is Integer
-        # assert object_to_sql_dtype('integer') is Integer
-        # assert object_to_sql_dtype('smallint') is Integer
-        # assert object_to_sql_dtype('small_integer') is Integer
-        # assert object_to_sql_dtype('str') is String
-        # assert object_to_sql_dtype('char') is String
-        # assert object_to_sql_dtype('clob') is String
-        # assert object_to_sql_dtype('nchar') is String
-        # assert object_to_sql_dtype('nvarchar') is String
-        # assert object_to_sql_dtype('string') is String
-        # assert object_to_sql_dtype('text') is String
-        # assert object_to_sql_dtype('unicode') is String
-        # assert object_to_sql_dtype('unicode_text') is String
-        # assert object_to_sql_dtype('varchar') is String
-        # assert object_to_sql_dtype('float') is Float
-        # assert object_to_sql_dtype('double_precision') is Float
-        # assert object_to_sql_dtype('double') is Float
-        # assert object_to_sql_dtype('numeric') is Float
-        # assert object_to_sql_dtype('real') is Float
-        # assert object_to_sql_dtype('datetime') is DateTime
-        # assert object_to_sql_dtype('timestamp') is DateTime
-        # assert object_to_sql_dtype('date') is Date
-        # assert object_to_sql_dtype('time') is Time
-        # assert object_to_sql_dtype('binary') is LargeBinary
-        # assert object_to_sql_dtype('blob') is LargeBinary
-        # assert object_to_sql_dtype('large_binary') is LargeBinary
-        # assert object_to_sql_dtype('varbinary') is LargeBinary
-        # assert object_to_sql_dtype('uuid') is Uuid
-        # assert object_to_sql_dtype('array') is ARRAY
-        # assert object_to_sql_dtype('dict') is JSON
+        assert object_to_sql_dtype('bool') is Boolean
+        assert object_to_sql_dtype('boolean') is Boolean
+        assert object_to_sql_dtype('int') is Integer
+        assert object_to_sql_dtype('bigint') is Integer
+        assert object_to_sql_dtype('big_integer') is Integer
+        assert object_to_sql_dtype('integer') is Integer
+        assert object_to_sql_dtype('smallint') is Integer
+        assert object_to_sql_dtype('small_integer') is Integer
+        assert object_to_sql_dtype('str') is String
+        assert object_to_sql_dtype('char') is String
+        assert object_to_sql_dtype('clob') is String
+        assert object_to_sql_dtype('nchar') is String
+        assert object_to_sql_dtype('nvarchar') is String
+        assert object_to_sql_dtype('string') is String
+        assert object_to_sql_dtype('text') is String
+        assert object_to_sql_dtype('unicode') is String
+        assert object_to_sql_dtype('unicode_text') is String
+        assert object_to_sql_dtype('varchar') is String
+        assert object_to_sql_dtype('float') is Float
+        assert object_to_sql_dtype('double_precision') is Float
+        assert object_to_sql_dtype('double') is Float
+        assert object_to_sql_dtype('numeric') is Float
+        assert object_to_sql_dtype('real') is Float
+        assert object_to_sql_dtype('datetime') is DateTime
+        assert object_to_sql_dtype('timestamp') is DateTime
+        assert object_to_sql_dtype('date') is Date
+        assert object_to_sql_dtype('time') is Time
+        assert object_to_sql_dtype('binary') is LargeBinary
+        assert object_to_sql_dtype('blob') is LargeBinary
+        assert object_to_sql_dtype('large_binary') is LargeBinary
+        assert object_to_sql_dtype('varbinary') is LargeBinary
+        assert object_to_sql_dtype('uuid') is Uuid
+        assert object_to_sql_dtype('array') is ARRAY
+        assert object_to_sql_dtype('dict') is JSON
 
-        # assert object_to_sql_dtype(np.array([True, False, np.nan, None], dtype=np.bool)) is Boolean
-        # assert object_to_sql_dtype(np.array([True, False, np.nan])) is Float
-        # assert object_to_sql_dtype(np.array([True, False, np.nan, None])) is JSON
-        # for dtype in (np.int8, np.int16, np.int32, np.int64, np.uint8, np.uint16, np.uint32):
-        #     assert object_to_sql_dtype(np.array([np.iinfo(dtype).min, np.iinfo(dtype).max], dtype=dtype)) is Integer
-        #     assert object_to_sql_dtype(np.array([np.iinfo(dtype).min, np.iinfo(dtype).max])) is Integer
-        # assert object_to_sql_dtype(np.array([np.iinfo(np.uint64).min, 2**63 - 1], dtype=np.uint64)) is Integer
-        # assert object_to_sql_dtype(np.array([np.iinfo(np.uint64).min, 2**63 - 1])) is Integer
-        # # assert object_to_sql_dtype(np.array([np.iinfo(np.uint64).min, np.iinfo(np.uint64).max], dtype=np.uint64)) is Float  # possible numpy bug
-        # assert object_to_sql_dtype(np.array([np.iinfo(np.uint64).min, np.iinfo(np.uint64).max])) is Float  # possible numpy bug
-        # assert object_to_sql_dtype(np.array(['a', '中文', '🚀'], dtype=np.str_)) is String
-        # assert object_to_sql_dtype(np.array(['a', '中文', '🚀'])) is String
-        # for dtype in (np.float16, np.float32, np.float64):
-        #     assert object_to_sql_dtype(np.array([np.finfo(dtype).min, np.finfo(dtype).max, np.nan, None], dtype=dtype)) is Float
-        #     assert object_to_sql_dtype(np.array([np.finfo(dtype).min, np.finfo(dtype).max, np.nan, None])) is JSON
-        # assert object_to_sql_dtype(np.array(['2025-01-01'], dtype='datetime64[D]')) is DateTime
-        # assert object_to_sql_dtype(np.array([np.datetime64('2025-01-01')], dtype='datetime64[D]')) is DateTime
-        # assert object_to_sql_dtype(np.datetime64('2025-01-01')) is DateTime
-        # assert object_to_sql_dtype(np.array([b'xyz'], dtype=np.bytes_)) is LargeBinary
-        # assert object_to_sql_dtype(np.array([b'xyz'])) is LargeBinary
-        # assert object_to_sql_dtype(np.array([{'a': 1}], dtype=np.object_)) is JSON
+        assert object_to_sql_dtype(np.array([True, False, np.nan, None], dtype=np.bool)) is Boolean
+        assert object_to_sql_dtype(np.array([True, False, np.nan])) is Float
+        assert object_to_sql_dtype(np.array([True, False, np.nan, None])) is JSON
+        for dtype in (np.int8, np.int16, np.int32, np.int64, np.uint8, np.uint16, np.uint32):
+            assert object_to_sql_dtype(np.array([np.iinfo(dtype).min, np.iinfo(dtype).max], dtype=dtype)) is Integer
+            assert object_to_sql_dtype(np.array([np.iinfo(dtype).min, np.iinfo(dtype).max])) is Integer
+        assert object_to_sql_dtype(np.array([np.iinfo(np.uint64).min, 2**63 - 1], dtype=np.uint64)) is Integer
+        assert object_to_sql_dtype(np.array([np.iinfo(np.uint64).min, 2**63 - 1])) is Integer
+        # assert object_to_sql_dtype(np.array([np.iinfo(np.uint64).min, np.iinfo(np.uint64).max], dtype=np.uint64)) is Float  # possible numpy bug
+        assert object_to_sql_dtype(np.array([np.iinfo(np.uint64).min, np.iinfo(np.uint64).max])) is Float  # possible numpy bug
+        assert object_to_sql_dtype(np.array(['a', '中文', '🚀'], dtype=np.str_)) is String
+        assert object_to_sql_dtype(np.array(['a', '中文', '🚀'])) is String
+        for dtype in (np.float16, np.float32, np.float64):
+            assert object_to_sql_dtype(np.array([np.finfo(dtype).min, np.finfo(dtype).max, np.nan, None], dtype=dtype)) is Float
+            assert object_to_sql_dtype(np.array([np.finfo(dtype).min, np.finfo(dtype).max, np.nan, None])) is JSON
+        assert object_to_sql_dtype(np.array(['2025-01-01'], dtype='datetime64[D]')) is DateTime
+        assert object_to_sql_dtype(np.array([np.datetime64('2025-01-01')], dtype='datetime64[D]')) is DateTime
+        assert object_to_sql_dtype(np.datetime64('2025-01-01')) is DateTime
+        assert object_to_sql_dtype(np.array([b'xyz'], dtype=np.bytes_)) is LargeBinary
+        assert object_to_sql_dtype(np.array([b'xyz'])) is LargeBinary
+        assert object_to_sql_dtype(np.array([{'a': 1}], dtype=np.object_)) is JSON
 
         assert object_to_sql_dtype(pd.Series([True, False])) is Boolean
         assert object_to_sql_dtype(pd.Series([True, False, np.nan, None], dtype=pd.BooleanDtype())) is Boolean
@@ -275,3 +275,19 @@ class TestDtype:
         assert object_to_sql_dtype(pd.Series([-1.5, 0, 0.5, np.nan, pd.NA, None])) is Float
         for dtype in (pd.Float32Dtype(), pd.Float64Dtype()):
             assert object_to_sql_dtype(pd.Series([-1.5, 0, 0.5, np.nan, pd.NA, None], dtype=dtype)) is Float
+
+        assert object_to_sql_dtype(pd.Series(['2025-01-01 00:00:00'])) is String
+        assert object_to_sql_dtype(pd.Series(['2025-01-01 00:00:00'], dtype='datetime64[ns]')) is DateTime
+        assert object_to_sql_dtype(pd.Series(['2025-01-01 00:00:00']).astype('datetime64[ns]')) is DateTime
+        assert object_to_sql_dtype(pd.to_datetime(pd.Series(['2025-01-01 00:00:00']))) is DateTime
+        assert object_to_sql_dtype(pd.to_datetime(['2025-01-01 00:00:00'])) is DateTime
+        assert object_to_sql_dtype(pd.Series(['2025-01'])) is String
+        assert object_to_sql_dtype(pd.Series(['2025-01'], dtype='datetime64[ns]')) is DateTime
+        assert object_to_sql_dtype(pd.Series(['2025-01'], dtype=pd.api.types.DatetimeTZDtype(tz='utc'))) == DATETIME_TIMEZONE
+        assert object_to_sql_dtype(pd.to_datetime(pd.Series(['2025-01']))) is DateTime
+        assert object_to_sql_dtype(pd.to_datetime(pd.Series(['2025-01-01T00:00:00']), format='%Y-%m-%dT%H:%M:%S')) is DateTime
+        assert object_to_sql_dtype(pd.to_datetime(['2025-01-01 00:00:00']).tz_localize('UTC')) == DATETIME_TIMEZONE
+        assert object_to_sql_dtype(pd.date_range('2025-01-01', '2025-01-03')) is DateTime
+        assert object_to_sql_dtype(pd.date_range('2025-01-01', '2025-01-03').tz_localize('UTC')) == DATETIME_TIMEZONE
+        assert object_to_sql_dtype(pd.Series(['00:00:00'])) is String
+        pytest.raises(TypeError, object_to_sql_dtype, pd.Series(['00:00:00'], dtype='timedelta64[ns]'))
