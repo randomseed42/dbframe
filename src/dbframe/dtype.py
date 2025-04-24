@@ -1,54 +1,23 @@
-import numpy as np
-import pandas as pd
-from typing import Literal, TypeAlias, Any
 import datetime
+from typing import Any
 from uuid import UUID as _python_UUID
 
+import numpy as np
+import pandas as pd
 from sqlalchemy import (
     ARRAY,
-    BIGINT,
-    BINARY,
-    BLOB,
-    BOOLEAN,
-    CHAR,
-    CLOB,
-    DATE,
-    DATETIME,
-    DOUBLE,
-    DOUBLE_PRECISION,
-    FLOAT,
-    INT,
-    INTEGER,
     JSON,
-    NCHAR,
-    NVARCHAR,
-    REAL,
-    SMALLINT,
-    TEXT,
-    TIME,
-    TIMESTAMP,
-    UUID,
-    VARBINARY,
-    VARCHAR,
-    BigInteger,
     Boolean,
     Date,
     DateTime,
-    Double,
     Float,
     Integer,
     LargeBinary,
-    Numeric,
-    SmallInteger,
     String,
-    Text,
     Time,
-    TupleType,
-    Unicode,
-    UnicodeText,
     Uuid,
 )
-from sqlalchemy.sql.sqltypes import TypeEngine, DATETIME_TIMEZONE, TIME_TIMEZONE
+from sqlalchemy.sql.sqltypes import DATETIME_TIMEZONE, TypeEngine
 
 
 def dtype_sql_to_py(sql_dtype: TypeEngine | type) -> type:
