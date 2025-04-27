@@ -1,8 +1,7 @@
-from dbframe.clause import where_parser, Where, order_parser, Order
-
 import pytest
+from sqlalchemy import Column, DateTime, Integer, true
 
-from sqlalchemy import Column, true, Integer, DateTime
+from dbframe.clause import Order, Where, order_parser, where_parser
 
 
 class TestClause:
@@ -16,7 +15,7 @@ class TestClause:
             'col3': Column('col3', type_=DateTime),
         }
         where = Where('col1', '==', 2)
-        cond = where_parser(where=where, columns=columns)
+        cond = where_parser(where=where, cols=columns)
         assert str(cond) == 'col1 = :col1_1' and cond.right.value == 2
 
         where = [
@@ -24,9 +23,9 @@ class TestClause:
             (
                 Where('col2', '<', 3),
                 Where('col3', 'between', ('2025-01-01', '2025-02-01')),
-            )
+            ),
         ]
-        cond = where_parser(where=where, columns=columns)
+        cond = where_parser(where=where, cols=columns)
         assert (
             str(cond.expression) == 'col1 >= :col1_1 AND (col2 < :col2_1 OR col3 BETWEEN :col3_1 AND :col3_2)'
             and cond.clauses[0].right.value == 2
@@ -45,9 +44,9 @@ class TestClause:
             'col3': Column('col3', type_=DateTime),
         }
         order = Order('col1')
-        orders = order_parser(order=order, columns=columns)
+        orders = order_parser(order=order, cols=columns)
         assert len(orders) == 1 and str(orders[0]) == 'col1 ASC'
 
         order = [Order('col1'), Order('col2', ascending=False)]
-        orders = order_parser(order=order, columns=columns)
+        orders = order_parser(order=order, cols=columns)
         assert len(orders) == 2 and str(orders[0]) == 'col1 ASC' and str(orders[1]) == 'col2 DESC'

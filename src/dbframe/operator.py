@@ -1,6 +1,5 @@
 from typing import Literal, TypeAlias
 
-
 Operator: TypeAlias = Literal[
     '==',
     '!=',

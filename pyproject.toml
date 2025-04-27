@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license-files = ["LICENSE"]
 authors = [{ name = "randomseed42", email = "randomseed42@protonmail.com" }]
-keywords = ["sql", "pandas", "database", "crud", "postgresql", "sqlite"]
+keywords = ["database", "crud", "sql", "pandas", "dataframe", "postgresql", "sqlite"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
@@ -14,12 +14,12 @@ classifiers = [
   "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
-    "alembic",
- "loguru",
- "orjsonic",
- "pandas",
- "psycopg2>=2.9.10",
- "sqlalchemy",
+  "alembic",
+  "orjsonic",
+  "pandas",
+  "psycopg2",
+  "pyarrow",
+  "sqlalchemy",
 ]
 
 [project.urls]

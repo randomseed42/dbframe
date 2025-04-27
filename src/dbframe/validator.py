@@ -5,7 +5,7 @@ class NameValidator:
     PATTERNS = {
         'dbname': r'^[a-zA-Z][a-zA-Z0-9_]*$',
         'schema': r'^[a-zA-Z][a-zA-Z0-9_]*$',
-        'table':  r'^[a-zA-Z][a-zA-Z0-9_]*$',
+        'table': r'^[a-zA-Z][a-zA-Z0-9_]*$',
         'column': r'^[a-zA-Z_][a-zA-Z0-9_]*$',
     }
 

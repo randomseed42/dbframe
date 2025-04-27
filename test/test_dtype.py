@@ -1,9 +1,9 @@
 import datetime
 import decimal
 import uuid
+
 import numpy as np
 import pandas as pd
-
 import pytest
 from sqlalchemy import (
     ARRAY,

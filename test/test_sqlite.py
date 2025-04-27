@@ -3,9 +3,9 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import Boolean, Column, Float, Integer, String
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
-from dbframe.sqlite import Sqlite
+from dbframe.sqlite import Order, Sqlite, Where
 
 
 @pytest.fixture
@@ -78,7 +78,7 @@ class TestSqliteTable:
         db_path = Path(tmp_dir, 'data.db')
         Sqlite().create_database(db_path=db_path)
         db = Sqlite(db_path=db_path)
-        assert db.get_table(tb_nm='test_table') is None
+        pytest.raises(ValueError, db.get_table, tb_nm='test_table')
         cols = [Column('id', Integer, primary_key=True), Column('name', String)]
         db.create_table(tb_nm='test_table', cols=cols)
         assert db.get_table(tb_nm='test_table').name == 'test_table'
@@ -96,7 +96,7 @@ class TestSqliteTable:
 
     def test_create_table(self, tmp_dir):
         db_path = Path(tmp_dir, 'data.db')
-        Sqlite().create_database(db_path=db_path)
+        # Sqlite().create_database(db_path=db_path)
         db = Sqlite(db_path=db_path)
         cols = [Column('id', Integer, primary_key=True), Column('name', String)]
         db.create_table(tb_nm='test_table', cols=cols)
@@ -193,3 +193,285 @@ class TestSqliteTable:
         assert isinstance(db.get_table(tb_nm='test_table9').columns['is_active'].type, Boolean)
         assert db.get_table(tb_nm='test_table9').columns['is_active'].nullable is True
         assert db.get_table(tb_nm='test_table9').columns['is_active'].default is None
+
+    def test_rename_table(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = Sqlite(db_path=db_path)
+        db.create_table(tb_nm='test_table', cols=[Column('id', Integer, primary_key=True), Column('name', String)])
+        db.rename_table(tb_nm='test_table', new_tb_nm='test_table2')
+        assert db.get_table(tb_nm='test_table2').name == 'test_table2'
+        pytest.raises(ValueError, db.get_table, tb_nm='test_table')
+
+    def test_drop_table(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = Sqlite(db_path=db_path)
+        db.create_table(tb_nm='test_table', cols=[Column('id', Integer, primary_key=True), Column('name', String)])
+        db.drop_table(tb_nm='test_table')
+        pytest.raises(ValueError, db.get_table, tb_nm='test_table')
+
+    @pytest.mark.skip('Not implemented yet')
+    def test_truncate_table(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = Sqlite(db_path=db_path)
+        db.create_table(tb_nm='test_table', cols=[Column('id', Integer, primary_key=True), Column('name', String)])
+        db.insert(tb_nm='test_table', values={'id': 1, 'name': 'Alice'})
+        db.insert(tb_nm='test_table', values={'id': 2, 'name': 'Bob'})
+        db.truncate_table(tb_nm='test_table')
+        assert len(db.select(tb_nm='test_table')) == 0
+
+
+class TestSqliteColumn:
+    def test_add_column(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = Sqlite(db_path=db_path)
+        db.create_table(tb_nm='test_table', cols=[Column('id', Integer, primary_key=True), Column('name', String)])
+        db.add_column(tb_nm='test_table', col=Column('age', Integer))
+        assert db.get_table(tb_nm='test_table').columns.keys() == ['id', 'name', 'age']
+        assert isinstance(db.get_table(tb_nm='test_table').columns['age'].type, Integer)
+        assert db.get_table(tb_nm='test_table').columns['age'].nullable is True
+
+    def test_add_columns(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = Sqlite(db_path=db_path)
+        db.create_table(tb_nm='test_table', cols=[Column('id', Integer, primary_key=True), Column('name', String)])
+        db.add_columns(tb_nm='test_table', cols=[Column('age', Integer), Column('salary', Float)])
+        assert db.get_table(tb_nm='test_table').columns.keys() == ['id', 'name', 'age', 'salary']
+        assert isinstance(db.get_table(tb_nm='test_table').columns['age'].type, Integer)
+        assert db.get_table(tb_nm='test_table').columns['age'].nullable is True
+        assert isinstance(db.get_table(tb_nm='test_table').columns['salary'].type, Float)
+        assert db.get_table(tb_nm='test_table').columns['salary'].nullable is True
+
+    def test_get_column(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = Sqlite(db_path=db_path)
+        db.create_table(tb_nm='test_table', cols=[Column('id', Integer, primary_key=True), Column('name', String)])
+        assert db.get_column(tb_nm='test_table', col_nm='id').name == 'id'
+        assert db.get_column(tb_nm='test_table', col_nm='name').name == 'name'
+        pytest.raises(ValueError, db.get_column, tb_nm='test_table', col_nm='age')
+
+    def test_get_columns(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = Sqlite(db_path=db_path)
+        db.create_table(tb_nm='test_table', cols=[Column('id', Integer, primary_key=True), Column('name', String)])
+        assert list(db.get_columns(tb_nm='test_table').keys()) == ['id', 'name']
+
+    def test_alter_column(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = Sqlite(db_path=db_path)
+        db.create_table(tb_nm='test_table', cols=[Column('id', Integer, primary_key=True), Column('name', String)])
+        db.alter_column(tb_nm='test_table', col_nm='name', new_col_nm='full_name')
+        assert list(db.get_table(tb_nm='test_table').columns.keys()) == ['id', 'full_name']
+        assert db.get_column(tb_nm='test_table', col_nm='full_name').name == 'full_name'
+        pytest.raises(
+            NotImplementedError, db.alter_column, tb_nm='test_table', col_nm='full_name', new_col_nm='name', sql_dtype='str'
+        )
+
+    def test_drop_column(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = Sqlite(db_path=db_path)
+        db.create_table(tb_nm='test_table', cols=[Column('id', Integer, primary_key=True), Column('name', String)])
+        db.drop_column(tb_nm='test_table', col_nm='name')
+        assert list(db.get_table(tb_nm='test_table').columns.keys()) == ['id']
+        pytest.raises(ValueError, db.get_column, tb_nm='test_table', col_nm='name')
+
+    def test_drop_columns(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = Sqlite(db_path=db_path)
+        db.create_table(
+            tb_nm='test_table', cols=[Column('id', Integer, primary_key=True), Column('name', String), Column('age', Integer)]
+        )
+        db.drop_columns(tb_nm='test_table', col_nms=['name', 'age'])
+        assert list(db.get_table(tb_nm='test_table').columns.keys()) == ['id']
+        pytest.raises(ValueError, db.get_column, tb_nm='test_table', col_nm='name')
+        pytest.raises(ValueError, db.get_column, tb_nm='test_table', col_nm='age')
+
+
+class TestSqliteIndex:
+    def test_create_index(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = Sqlite(db_path=db_path)
+        db.create_table(tb_nm='test_table', cols=[Column('id', Integer, primary_key=True), Column('name', String)])
+        db.create_index(tb_nm='test_table', col_nms=['name'])
+        assert 'idx_test_table_name' in db.get_indexes(tb_nm='test_table')
+        assert list(db.get_indexes(tb_nm='test_table')['idx_test_table_name'].columns.keys()) == ['name']
+        assert db.get_indexes(tb_nm='test_table')['idx_test_table_name'].unique == 0
+        db.create_index(tb_nm='test_table', col_nms=['id', 'name'], idx_nm='idx_test_table_id_name', unique=True)
+        assert 'idx_test_table_id_name' in db.get_indexes(tb_nm='test_table')
+        assert list(db.get_indexes(tb_nm='test_table')['idx_test_table_id_name'].columns.keys()) == ['id', 'name']
+        assert db.get_indexes(tb_nm='test_table')['idx_test_table_id_name'].unique == 1
+        db.create_table(tb_nm='test_table2', cols=[Column('id', Integer, primary_key=True), Column('name', String)])
+        pytest.raises(
+            OperationalError,
+            db.create_index,
+            tb_nm='test_table2',
+            col_nms=['id', 'name'],
+            idx_nm='idx_test_table_id_name',
+            unique=True,
+        )
+
+    def test_get_index(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = Sqlite(db_path=db_path)
+        db.create_table(tb_nm='test_table', cols=[Column('id', Integer, primary_key=True), Column('name', String)])
+        db.create_index(tb_nm='test_table', col_nms=['name'])
+        assert db.get_index(tb_nm='test_table', idx_nm='idx_test_table_name').name == 'idx_test_table_name'
+        assert list(db.get_index(tb_nm='test_table', idx_nm='idx_test_table_name').columns.keys()) == ['name']
+        assert db.get_index(tb_nm='test_table', idx_nm='idx_test_table_name').unique == 0
+        db.create_index(tb_nm='test_table', col_nms=['id', 'name'], idx_nm='idx_test_table_id_name', unique=True)
+        assert db.get_index(tb_nm='test_table', idx_nm='idx_test_table_id_name').name == 'idx_test_table_id_name'
+        assert list(db.get_index(tb_nm='test_table', idx_nm='idx_test_table_id_name').columns.keys()) == ['id', 'name']
+        assert db.get_index(tb_nm='test_table', idx_nm='idx_test_table_id_name').unique == 1
+        pytest.raises(ValueError, db.get_index, tb_nm='test_table', idx_nm='idx_test_table_age')
+
+    def test_get_indexes(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = Sqlite(db_path=db_path)
+        db.create_table(tb_nm='test_table', cols=[Column('id', Integer, primary_key=True), Column('name', String)])
+        db.create_index(tb_nm='test_table', col_nms=['name'])
+        assert 'idx_test_table_name' in db.get_indexes(tb_nm='test_table')
+        assert list(db.get_indexes(tb_nm='test_table')['idx_test_table_name'].columns.keys()) == ['name']
+        assert db.get_indexes(tb_nm='test_table')['idx_test_table_name'].unique == 0
+        db.create_index(tb_nm='test_table', col_nms=['id', 'name'], idx_nm='idx_test_table_id_name', unique=True)
+        assert 'idx_test_table_id_name' in db.get_indexes(tb_nm='test_table')
+        assert list(db.get_indexes(tb_nm='test_table')['idx_test_table_id_name'].columns.keys()) == ['id', 'name']
+        assert db.get_indexes(tb_nm='test_table')['idx_test_table_id_name'].unique == 1
+        db.create_table(tb_nm='test_table2', cols=[Column('id', Integer, primary_key=True), Column('name', String)])
+        assert db.get_indexes(tb_nm='test_table2') == {}
+
+    def test_drop_index(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = Sqlite(db_path=db_path)
+        db.create_table(tb_nm='test_table', cols=[Column('id', Integer, primary_key=True), Column('name', String)])
+        db.create_index(tb_nm='test_table', col_nms=['name'])
+        db.drop_index(tb_nm='test_table', idx_nm='idx_test_table_name')
+        assert 'idx_test_table_name' not in db.get_indexes(tb_nm='test_table')
+        db.create_index(tb_nm='test_table', col_nms=['id', 'name'], idx_nm='idx_test_table_id_name', unique=True)
+        db.drop_index(tb_nm='test_table', idx_nm='idx_test_table_id_name')
+        assert 'idx_test_table_id_name' not in db.get_indexes(tb_nm='test_table')
+        db.create_table(tb_nm='test_table2', cols=[Column('id', Integer, primary_key=True), Column('name', String)])
+        pytest.raises(ValueError, db.drop_index, tb_nm='test_table2', idx_nm='idx_test_table_id_name')
+
+
+class TestSqliteRow:
+    def test_insert_row(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = Sqlite(db_path=db_path)
+        db.create_table(tb_nm='test_table', cols=[Column('id', Integer, primary_key=True), Column('name', String)])
+        assert db.insert_row(tb_nm='test_table', row={'id': 1, 'name': 'Alice'}) == (1,)
+        assert db.insert_row(tb_nm='test_table', row={'id': 2, 'name': 'Bob'}) == (2,)
+        assert db.insert_row(tb_nm='test_table', row={'id': 3, 'name': 'Charlie'}) == (3,)
+        pytest.raises(IntegrityError, db.insert_row, tb_nm='test_table', row={'id': 3, 'name': 'Carl'})
+        assert db.insert_row(tb_nm='test_table', row={'id': 3, 'name': 'Carl'}, on_conflict='do_nothing') == (3,)
+        assert db.insert_row(tb_nm='test_table', row={'id': 3, 'name': 'Carl'}, on_conflict='upsert') == (3,)
+        assert db.insert_row(tb_nm='test_table', row={'name': 'Dave'}) == (4,)
+        assert db.insert_row(tb_nm='test_table', row={'id': 6, 'name': 'Foxy'}) == (6,)
+        assert db.insert_row(tb_nm='test_table', row={'NAME': 'Eddy'}) == (7,)
+        assert db.select_rows(tb_nm='test_table') == (
+            ['id', 'name'],
+            [(1, 'Alice'), (2, 'Bob'), (3, 'Carl'), (4, 'Dave'), (6, 'Foxy'), (7, None)],
+        )
+        assert db.insert_row(
+            tb_nm='test_table', row={'Id': 7, 'NAME': 'Eddy'}, on_conflict='upsert', row_key_validate=True
+        ) == (7,)
+        assert db.select_rows(tb_nm='test_table') == (
+            ['id', 'name'],
+            [(1, 'Alice'), (2, 'Bob'), (3, 'Carl'), (4, 'Dave'), (6, 'Foxy'), (7, 'Eddy')],
+        )
+
+    def test_insert_rows(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = Sqlite(db_path=db_path)
+        db.create_table(tb_nm='test_table', cols=[Column('id', Integer, primary_key=True), Column('name', String)])
+        assert db.insert_rows(
+            tb_nm='test_table', rows=[{'id': 1, 'name': 'Alice'}, {'id': 2, 'name': 'Bob'}, {'id': 3, 'name': 'Charlie'}]
+        ) == [(1,), (2,), (3,)]
+        pytest.raises(
+            IntegrityError, db.insert_rows, tb_nm='test_table', rows=[{'id': 3, 'name': 'Carl'}, {'id': 4, 'name': 'Dave'}]
+        )
+        assert db.insert_rows(
+            tb_nm='test_table', rows=[{'id': 3, 'name': 'Carl'}, {'id': 4, 'name': 'Dave'}], on_conflict='do_nothing'
+        ) == [(None,)]
+        assert db.insert_rows(
+            tb_nm='test_table', rows=[{'id': 3, 'name': 'Carl'}, {'id': 4, 'name': 'Dave'}], on_conflict='ignore'
+        ) == [(3,), (4,)]
+        assert db.select_rows(tb_nm='test_table') == (['id', 'name'], [(1, 'Alice'), (2, 'Bob'), (3, 'Charlie'), (4, 'Dave')])
+        assert db.insert_rows(
+            tb_nm='test_table', rows=[{'id': 3, 'name': 'Carl'}, {'id': 4, 'name': 'Dave'}], on_conflict='upsert'
+        ) == [(3,), (4,)]
+        assert db.select_rows(tb_nm='test_table') == (['id', 'name'], [(1, 'Alice'), (2, 'Bob'), (3, 'Carl'), (4, 'Dave')])
+
+    def test_select_rows(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = Sqlite(db_path=db_path)
+        db.create_table(tb_nm='test_table', cols=[Column('id', Integer, primary_key=True), Column('name', String)])
+        db.insert_row(tb_nm='test_table', row={'id': 1, 'name': 'Alice'})
+        db.insert_row(tb_nm='test_table', row={'id': 2, 'name': 'Bob'})
+        db.insert_row(tb_nm='test_table', row={'id': 3, 'name': 'Charlie'})
+        assert db.select_rows(tb_nm='test_table') == (['id', 'name'], [(1, 'Alice'), (2, 'Bob'), (3, 'Charlie')])
+        assert db.select_rows(tb_nm='test_table', col_nms=['name']) == (['name'], [('Alice',), ('Bob',), ('Charlie',)])
+        pytest.raises(ValueError, db.select_rows, tb_nm='test_table', col_nms=[])
+        pytest.raises(ValueError, db.select_rows, tb_nm='test_table', col_nms=['name', 'age'])
+        assert db.select_rows(tb_nm='test_table', col_nms=['name'], where=Where('id', '>', 1), order=Order('id', False)) == (
+            ['name'],
+            [('Charlie',), ('Bob',)],
+        )
+        assert db.select_rows(
+            tb_nm='test_table',
+            col_nms=['name'],
+            where=[Where('id', '>', 1), Where('name', 'like', 'B%')],
+            order=Order('id', False),
+        ) == (['name'], [('Bob',)])
+        assert db.select_rows(
+            tb_nm='test_table',
+            col_nms=['name'],
+            where=(Where('id', '>', 2), Where('name', 'like', 'A%')),
+            order=Order('id', False),
+        ) == (['name'], [('Charlie',), ('Alice',)])
+        assert db.select_rows(
+            tb_nm='test_table',
+            col_nms=['name'],
+            where=(Where('id', '<', 2), [Where('id', '>=', 2), Where('name', 'ilike', '%li%')]),
+            order=Order('id', False),
+        ) == (['name'], [('Charlie',), ('Alice',)])
+
+    def test_update_rows(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = Sqlite(db_path=db_path)
+        db.create_table(tb_nm='test_table', cols=[Column('id', Integer, primary_key=True), Column('name', String)])
+        db.insert_row(tb_nm='test_table', row={'id': 1, 'name': 'Alice'})
+        db.insert_row(tb_nm='test_table', row={'id': 2, 'name': 'Bob'})
+        db.insert_row(tb_nm='test_table', row={'id': 3, 'name': 'Charlie'})
+        assert db.update_rows(tb_nm='test_table', set_values={'name': 'Eve'}, where=Where('id', '>', 1)) == 2
+        assert db.select_rows(tb_nm='test_table') == (['id', 'name'], [(1, 'Alice'), (2, 'Eve'), (3, 'Eve')])
+        assert db.update_rows(tb_nm='test_table', set_values={'name': 'Foxy'}, where=Where('id', '<', 3)) == 2
+        assert db.select_rows(tb_nm='test_table') == (['id', 'name'], [(1, 'Foxy'), (2, 'Foxy'), (3, 'Eve')])
+
+    def test_delete_rows(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = Sqlite(db_path=db_path)
+        db.create_table(tb_nm='test_table', cols=[Column('id', Integer, primary_key=True), Column('name', String)])
+        db.insert_row(tb_nm='test_table', row={'id': 1, 'name': 'Alice'})
+        db.insert_row(tb_nm='test_table', row={'id': 2, 'name': 'Bob'})
+        db.insert_row(tb_nm='test_table', row={'id': 3, 'name': 'Charlie'})
+        assert db.delete_rows(tb_nm='test_table', where=Where('id', '>', 1)) == 2
+        assert db.select_rows(tb_nm='test_table') == (['id', 'name'], [(1, 'Alice')])
+        assert db.delete_rows(tb_nm='test_table') == 1
+        assert db.select_rows(tb_nm='test_table') == (['id', 'name'], [])
+
+    def test_execute_sql(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = Sqlite(db_path=db_path)
+        db.create_table(tb_nm='test_table', cols=[Column('id', Integer, primary_key=True), Column('name', String)])
+        db.insert_row(tb_nm='test_table', row={'id': 1, 'name': 'Alice'})
+        db.insert_row(tb_nm='test_table', row={'id': 2, 'name': 'Bob'})
+        db.insert_row(tb_nm='test_table', row={'id': 3, 'name': 'Charlie'})
+        db.create_table(tb_nm='test_table2', cols=[Column('id', Integer, primary_key=True), Column('age', Integer)])
+        db.insert_row(tb_nm='test_table2', row={'id': 1, 'age': 20})
+        db.insert_row(tb_nm='test_table2', row={'id': 2, 'age': 30})
+        db.insert_row(tb_nm='test_table2', row={'id': 3, 'age': 40})
+        assert db._execute_sql('SELECT * FROM test_table').fetchall() == [(1, 'Alice'), (2, 'Bob'), (3, 'Charlie')]
+        assert db._execute_sql('SELECT t1.name, t2.age FROM test_table t1 JOIN test_table2 t2 ON t1.id = t2.id').fetchall() == [
+            ('Alice', 20),
+            ('Bob', 30),
+            ('Charlie', 40),
+        ]

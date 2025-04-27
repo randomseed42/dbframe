@@ -14,24 +14,24 @@ class Where(NamedTuple):
 
 def where_parser(
     where: list[Where] | tuple[Where] | Where | None,
-    columns: dict[str, Column] = None,
-    table: Table = None,
+    cols: dict[str, Column] = None,
+    tb: Table = None,
 ):
     if where is None:
         return true()
 
-    if columns is None or len(columns) == 0:
-        if table is None:
+    if cols is None or len(cols) == 0:
+        if tb is None:
             raise ValueError('Either columns or table must be provided.')
-        columns = table.columns
+        cols = tb.columns
 
     def _parse(_w: Where | None):
         if _w is None:
             return true()
         _column_name = NameValidator.column(_w.column_name)
-        if _column_name not in columns:
+        if _column_name not in cols:
             raise ValueError(f'Column {_column_name} not found in columns.')
-        _column = columns[_column_name]
+        _column = cols[_column_name]
 
         if _w.operator == 'between':
             if _w.value is None or not isinstance(_w.value, Sequence) or len(_w.value) != 2:
@@ -45,9 +45,9 @@ def where_parser(
     if isinstance(where, Where):
         return _parse(where)
     if isinstance(where, list):
-        return and_(where_parser(where=_where, columns=columns, table=table) for _where in where)
+        return and_(where_parser(where=_where, cols=cols, tb=tb) for _where in where)
     if isinstance(where, tuple):
-        return or_(where_parser(where=_where, columns=columns, table=table) for _where in where)
+        return or_(where_parser(where=_where, cols=cols, tb=tb) for _where in where)
 
 
 class Order(NamedTuple):
@@ -57,26 +57,26 @@ class Order(NamedTuple):
 
 def order_parser(
     order: list[Order] | tuple[Order] | Order | None,
-    columns: dict[str, Column] = None,
-    table: Table = None,
+    cols: dict[str, Column] = None,
+    tb: Table = None,
 ):
     if order is None:
         return [None]
 
-    if columns is None or len(columns) == 0:
-        if table is None:
+    if cols is None or len(cols) == 0:
+        if tb is None:
             raise ValueError('Either columns or table must be provided.')
-        columns = table.columns
+        cols = tb.columns
 
     if isinstance(order, Order):
         column_name = NameValidator.column(order.column_name)
         if order.ascending:
-            return [columns.get(column_name).asc()]
+            return [cols.get(column_name).asc()]
         else:
-            return [columns.get(column_name).desc()]
+            return [cols.get(column_name).desc()]
 
     if isinstance(order, list | tuple):
         orders = []
         for _o in order:
-            orders.extend(order_parser(order=_o, columns=columns, table=table))
+            orders.extend(order_parser(order=_o, cols=cols, tb=tb))
         return orders
