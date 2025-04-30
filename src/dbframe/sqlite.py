@@ -2,14 +2,29 @@ import os
 import pathlib
 from typing import Any, Literal, Sequence
 
+import pandas as pd
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from sqlalchemy import Column, CursorResult, Index, MetaData, Row, Table, create_engine, select, text
+from sqlalchemy import (
+    Column,
+    Constraint,
+    CursorResult,
+    Index,
+    MetaData,
+    Row,
+    Table,
+    UniqueConstraint,
+    create_engine,
+    inspect,
+    select,
+    text,
+)
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.util import FacadeDict
 
 from .clause import Order, Where, order_parser, where_parser
+from .dtype import df_to_rows, df_to_schema_items
 from .validator import NameValidator
 
 
@@ -20,6 +35,8 @@ class Sqlite:
         self.abs_db_path = self.get_abs_db_path(db_path=self.db_path)
         self.url = self.get_url()
         self.engine = create_engine(self.url, isolation_level='AUTOCOMMIT', connect_args={'check_same_thread': False})
+        for k, v in kwargs.items():
+            setattr(self, k, v)
 
     def __del__(self) -> None:
         self.engine.dispose()
@@ -86,7 +103,13 @@ class Sqlite:
         metadata.reflect(bind=self.engine, views=views, **kwargs)
         return metadata.tables
 
-    def create_table(self, tb_nm: str, cols: list[Column], **kwargs) -> Table | None:
+    def create_table(
+        self,
+        tb_nm: str,
+        cols: Sequence[Column | Constraint | Index | UniqueConstraint],
+        sqlite_autoincrement: bool = True,
+        **kwargs,
+    ) -> Table | None:
         tb_nm = NameValidator.table(tb_nm)
         try:
             self.get_table(tb_nm=tb_nm)
@@ -98,7 +121,7 @@ class Sqlite:
         metadata = MetaData()
         for col in cols:
             col.name = NameValidator.column(col.name)
-        tb = Table(tb_nm, metadata, *cols, **kwargs)
+        tb = Table(tb_nm, metadata, *cols, sqlite_autoincrement=sqlite_autoincrement, **kwargs)
         tb.create(bind=self.engine, checkfirst=True)
         self._verbose_print(f'Table {tb_nm} created')
         return self.get_table(tb_nm=tb_nm, **kwargs)
@@ -127,12 +150,12 @@ class Sqlite:
 
     def truncate_table(self, tb_nm: str, restart: bool = True, **kwargs) -> str | None:
         tb_nm = NameValidator.table(tb_nm)
-        self.get_table(tb_nm=tb_nm, **kwargs)
+        tb = self.get_table(tb_nm=tb_nm, **kwargs)
         with self.engine.connect() as conn:
-            conn.execute(text(f'DELETE FROM {tb_nm};'))
+            conn.execute(tb.delete())
             if restart:
-                if self.get_table(tb_nm='sqlite_sequence') is not None:
-                    conn.execute(text(f"DELETE FROM sqlite_sequence WHERE name='{tb_nm}';"))
+                if inspect(conn).has_table('sqlite_sequence'):
+                    self.delete_rows(tb_nm='sqlite_sequence', where=Where('name', '==', tb_nm))
             self._verbose_print(f'Table {tb_nm} truncated')
             return tb_nm
 
@@ -426,6 +449,63 @@ class Sqlite:
 
 
 class SqliteDF(Sqlite):
-    def __init__(self):
-        super().__init__()
-        pass
+    def __init__(self, db_path: str | os.PathLike | pathlib.Path = None, verbose: bool = False, **kwargs):
+        super().__init__(db_path=db_path, verbose=verbose, **kwargs)
+
+    def df_create_table(
+        self,
+        df: pd.DataFrame,
+        tb_nm: str,
+        primary_col_nm: str = None,
+        primary_col_autoinc: Literal['auto', True, False] = 'auto',
+        not_null_col_nms: Sequence[str] = None,
+        index_col_nms: Sequence[str | Sequence[str]] = None,
+        unique_col_nms: Sequence[str | Sequence[str]] = None,
+        **kwargs,
+    ) -> Table:
+        cols = df_to_schema_items(
+            df=df,
+            tb_nm=tb_nm,
+            primary_col_nm=primary_col_nm,
+            primary_col_autoinc=primary_col_autoinc,
+            not_null_col_nms=not_null_col_nms,
+            index_col_nms=index_col_nms,
+            unique_col_nms=unique_col_nms,
+            dialect='sqlite',
+        )
+        tb = self.create_table(tb_nm=tb_nm, cols=cols, **kwargs)
+        return tb
+
+    def df_add_columns(self, df: pd.DataFrame, tb_nm: str, **kwargs) -> list[str] | None:
+        cols = df_to_schema_items(df=df, tb_nm=tb_nm, dialect='sqlite')
+        new_col_nms = self.add_columns(tb_nm=tb_nm, cols=cols, **kwargs)
+        return new_col_nms
+
+    def df_insert_rows(
+        self,
+        df: pd.DataFrame,
+        tb_nm: str,
+        add_columns: bool = False,
+        on_conflict: Literal['do_nothing', 'ignore', 'skip', 'update', 'replace', 'upsert'] = None,
+        **kwargs,
+    ) -> list[Row]:
+        if add_columns:
+            self.df_add_columns(df=df, tb_nm=tb_nm, **kwargs)
+        rows = df_to_rows(df=df)
+        return self.insert_rows(tb_nm=tb_nm, rows=rows, on_conflict=on_conflict, row_key_validate=False, **kwargs)
+
+    def df_select_rows(
+        self,
+        tb_nm: str,
+        col_nms: list[str] = None,
+        where: Where | Sequence = None,
+        order: Order | Sequence[Order] = None,
+        limit: int = None,
+        offset: int = None,
+        **kwargs,
+    ) -> pd.DataFrame:
+        col_nms, rows = self.select_rows(
+            tb_nm=tb_nm, col_nms=col_nms, where=where, order=order, limit=limit, offset=offset, **kwargs
+        )
+        df = pd.DataFrame(rows, columns=col_nms)
+        return df

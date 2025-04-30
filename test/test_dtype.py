@@ -56,7 +56,7 @@ from sqlalchemy.sql.sqltypes import (
     NullType,
 )
 
-from dbframe.dtype import dtype_sql_to_py, dtype_sql_to_str, object_to_sql_dtype
+from dbframe.dtype import df_to_schema_items, dtype_sql_to_py, dtype_sql_to_str, object_to_sql_dtype
 
 
 class TestDtype:
@@ -291,3 +291,47 @@ class TestDtype:
         assert object_to_sql_dtype(pd.date_range('2025-01-01', '2025-01-03').tz_localize('UTC')) == DATETIME_TIMEZONE
         assert object_to_sql_dtype(pd.Series(['00:00:00'])) is String
         pytest.raises(TypeError, object_to_sql_dtype, pd.Series(['00:00:00'], dtype='timedelta64[ns]'))
+
+        assert object_to_sql_dtype(pd.Series([b'xyz'])) is JSON
+        assert object_to_sql_dtype(pd.Series([b'xyz'], dtype=np.bytes_)) is LargeBinary
+        assert object_to_sql_dtype(pd.Series([b'xyz'], dtype=bytes)) is LargeBinary
+
+        df = pd.DataFrame(
+            {'a': [1, 2, 3], 'b': [True, False, True], 'c': ['a', 'b', 'c'], 'd': ['2025-01-01', '2025-01-02', '2025-01-03']}
+        )
+        df['c'] = df['c'].astype(pd.CategoricalDtype())
+        df['d'] = pd.to_datetime(df['d'])
+        assert object_to_sql_dtype(df.index) is Integer
+        assert object_to_sql_dtype(df['d']) is DateTime
+        df = df.set_index('d')
+        assert object_to_sql_dtype(df.index) is DateTime
+        assert object_to_sql_dtype(df['c']) is String
+        df = df.set_index('c')
+        assert object_to_sql_dtype(df.index) is String
+
+
+class TestDFtoSchema:
+    def test_df_to_schema_items(self):
+        df = pd.DataFrame(
+            {'a': [1, 2, 3], 'b': [True, False, True], 'c': ['a', 'b', 'c'], 'd': ['2025-01-01', '2025-01-02', '2025-01-03']}
+        )
+        df['c'] = df['c'].astype(pd.CategoricalDtype())
+        df['d'] = pd.to_datetime(df['d'])
+        schema_items = df_to_schema_items(df, tb_nm='test_table')
+        assert len(schema_items) == 5
+        schema_items = df_to_schema_items(df, tb_nm='test_table', primary_col_nm='a', primary_col_autoinc=True)
+        assert len(schema_items) == 4
+        assert schema_items[0].name == 'a'
+        assert isinstance(schema_items[0].type, Integer)
+        assert schema_items[0].primary_key is True
+        assert schema_items[0].autoincrement is True
+        schema_items = df_to_schema_items(
+            df,
+            tb_nm='test_table',
+            primary_col_nm='a',
+            primary_col_autoinc=True,
+            not_null_col_nms=['b'],
+            index_col_nms=['d', ['b', 'c']],
+            unique_col_nms=['b', ['d', 'c']],
+        )
+        assert len(schema_items) == 8

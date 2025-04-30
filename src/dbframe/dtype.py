@@ -1,23 +1,31 @@
 import datetime
-from typing import Any
+from base64 import b64decode
+from typing import Any, Literal, Sequence
 from uuid import UUID as _python_UUID
 
 import numpy as np
+import orjsonic
 import pandas as pd
 from sqlalchemy import (
     ARRAY,
     JSON,
     Boolean,
+    Column,
+    Constraint,
     Date,
     DateTime,
     Float,
+    Index,
     Integer,
     LargeBinary,
     String,
     Time,
+    UniqueConstraint,
     Uuid,
 )
 from sqlalchemy.sql.sqltypes import DATETIME_TIMEZONE, TypeEngine
+
+from .validator import NameValidator
 
 
 def dtype_sql_to_py(sql_dtype: TypeEngine | type) -> type:
@@ -117,10 +125,12 @@ DTYPE_PANDAS_TO_SQL_MAPPER = {
     pd.Timestamp: DateTime,
     pd.DatetimeTZDtype: DateTime,
     pd.DatetimeIndex: DateTime,
+    pd.RangeIndex: Integer,
+    pd.CategoricalDtype: String,
 }
 
 
-def object_to_sql_dtype(obj: Any) -> TypeEngine:
+def _object_to_sql_dtype(obj: Any) -> TypeEngine:
     if isinstance(obj, type):
         return DTYPE_PY_TO_SQL_MAPPER[obj]
     if isinstance(obj, str):
@@ -133,6 +143,8 @@ def object_to_sql_dtype(obj: Any) -> TypeEngine:
         pd_type = obj.dtype
         if pd_type in DTYPE_PANDAS_TO_SQL_MAPPER:
             return DTYPE_PANDAS_TO_SQL_MAPPER[pd_type]
+        if isinstance(pd_type, pd.CategoricalDtype):
+            return String
         sub_type = pd_type.type
         if sub_type is np.object_:
             inferred_pd_type = obj.convert_dtypes().dtype
@@ -148,8 +160,159 @@ def object_to_sql_dtype(obj: Any) -> TypeEngine:
             else:
                 return DATETIME_TIMEZONE
         raise TypeError(f'pandas series dtype {pd_type} not supported yet')
-    if isinstance(obj, pd.DatetimeIndex):
-        if obj.tz is None:
+    if isinstance(obj, pd.Index):
+        if isinstance(obj, pd.DatetimeIndex):
+            if obj.tz is None:
+                return DateTime
+            else:
+                return DATETIME_TIMEZONE
+        if isinstance(obj, pd.PeriodIndex):
             return DateTime
-        else:
-            return DATETIME_TIMEZONE
+        if isinstance(obj, pd.RangeIndex):
+            return Integer
+        if isinstance(obj, pd.CategoricalIndex):
+            return String
+
+
+def object_to_sql_dtype(obj: Any, dialect: Literal['sqlite', 'postgresql'] = None) -> TypeEngine:
+    sql_dtype = _object_to_sql_dtype(obj)
+    if sql_dtype is None:
+        raise TypeError(f'unsupported dtype {type(obj)}')
+    if dialect == 'sqlite':
+        if sql_dtype in (DateTime, Date, Time, DATETIME_TIMEZONE):
+            return String
+        if sql_dtype is JSON:
+            return String
+    return sql_dtype
+
+
+def _df_convert_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+    byte_col_nms = []
+    for col_nm in df.columns:
+        try:
+            df[col_nm] = df[col_nm].convert_dtypes()
+            df[col_nm] = df[col_nm].where(pd.notnull(df[col_nm]), None)
+            df[col_nm] = df[col_nm].replace('', None)
+        except UnicodeDecodeError:
+            byte_col_nms.append(col_nm)
+    return byte_col_nms, df
+
+
+def _df_to_primary_col(
+    df: pd.DataFrame,
+    primary_col_nm: str = None,
+    primary_col_autoinc: Literal['auto', True, False] = 'auto',
+    dialect: Literal['sqlite', 'postgresql'] = None,
+) -> Column:
+    if primary_col_nm is None:
+        _primary_col_nm = 'uid'
+        primary_col = df.index
+    elif primary_col_nm not in df.columns:
+        raise ValueError(f'primary column {primary_col_nm} not in dataframe')
+    else:
+        _primary_col_nm = NameValidator.column(primary_col_nm)
+        primary_col = df[primary_col_nm]
+    if not primary_col.is_unique:
+        raise ValueError(f'primary column {primary_col_nm} must be unique')
+
+    sql_dtype = object_to_sql_dtype(primary_col, dialect=dialect)
+
+    if primary_col_autoinc == 'auto':
+        return Column(_primary_col_nm, sql_dtype, primary_key=True, autoincrement='auto')
+    elif primary_col_autoinc is True:
+        if sql_dtype is not Integer:
+            raise ValueError(f'primary column {primary_col_nm} must be integer for auto-increment')
+        return Column(_primary_col_nm, sql_dtype, primary_key=True, autoincrement=True)
+    elif primary_col_autoinc is False:
+        return Column(_primary_col_nm, sql_dtype, primary_key=True)
+    else:
+        raise ValueError(f'invalid primary_col_autoinc value {primary_col_autoinc}')
+
+
+def _df_to_index_constraint(df: pd.DataFrame, tb_nm: str, index_col_grp: str | Sequence[str]) -> Constraint:
+    if isinstance(index_col_grp, str):
+        index_col_grp = [index_col_grp]
+    index_col_nms = []
+    for index_col_nm in index_col_grp:
+        if index_col_nm not in df.columns:
+            raise ValueError(f'index column {index_col_nm} not in dataframe')
+        _index_col_nm = NameValidator.column(index_col_nm)
+        if _index_col_nm in index_col_nms:
+            raise ValueError(f'index column {index_col_nm} already in index group')
+        index_col_nms.append(_index_col_nm)
+    index_nm = 'ix_{}_{}'.format(tb_nm, '_'.join(index_col_nms))
+    index = Index(index_nm, *index_col_nms)
+    return index
+
+
+def _df_to_unique_constraint(df: pd.DataFrame, tb_nm: str, unique_col_grp: str | Sequence[str]) -> UniqueConstraint:
+    if isinstance(unique_col_grp, str):
+        unique_col_grp = [unique_col_grp]
+    unique_col_nms = []
+    for unique_col_nm in unique_col_grp:
+        if unique_col_nm not in df.columns:
+            raise ValueError(f'unique column {unique_col_nm} not in dataframe')
+        _unique_col_nm = NameValidator.column(unique_col_nm)
+        if _unique_col_nm in unique_col_nms:
+            raise ValueError(f'unique column {unique_col_nm} already in unique group')
+        unique_col_nms.append(_unique_col_nm)
+    unique_nm = 'uix_{}_{}'.format(tb_nm, '_'.join(unique_col_nms))
+    unique = UniqueConstraint(*unique_col_nms, name=unique_nm)
+    return unique
+
+
+def df_to_schema_items(
+    df: pd.DataFrame,
+    tb_nm: str,
+    primary_col_nm: str = None,
+    primary_col_autoinc: Literal['auto', True, False] = 'auto',
+    not_null_col_nms: Sequence[str] = None,
+    index_col_nms: Sequence[str | Sequence[str]] = None,
+    unique_col_nms: Sequence[str | Sequence[str]] = None,
+    dialect: Literal['sqlite', 'postgresql'] = None,
+) -> Sequence[Column | Constraint | Index | UniqueConstraint]:
+    _, df = _df_convert_dtypes(df)
+    tb_nm = NameValidator.table(tb_nm)
+    schema_items = []
+
+    sql_col = _df_to_primary_col(df=df, primary_col_nm=primary_col_nm, primary_col_autoinc=primary_col_autoinc, dialect=dialect)
+    schema_items.append(sql_col)
+
+    if not_null_col_nms is None:
+        not_null_col_nms = []
+    if index_col_nms is None:
+        index_col_nms = []
+    if unique_col_nms is None:
+        unique_col_nms = []
+
+    for col_nm in df.columns:
+        if col_nm == primary_col_nm:
+            continue
+        _col_nm = NameValidator.column(col_nm)
+        nullable = col_nm not in not_null_col_nms and _col_nm not in not_null_col_nms
+        sql_dtype = object_to_sql_dtype(df[col_nm], dialect=dialect)
+        sql_col = Column(_col_nm, sql_dtype, nullable=nullable)
+        schema_items.append(sql_col)
+    for index_col_nms_grp in index_col_nms:
+        index = _df_to_index_constraint(df=df, tb_nm=tb_nm, index_col_grp=index_col_nms_grp)
+        schema_items.append(index)
+    for unique_col_nms_grp in unique_col_nms:
+        unique = _df_to_unique_constraint(df=df, tb_nm=tb_nm, unique_col_grp=unique_col_nms_grp)
+        schema_items.append(unique)
+    return schema_items
+
+
+def df_to_rows(df: pd.DataFrame) -> Sequence[dict]:
+    df.columns = map(NameValidator.column, df.columns)
+    byte_col_nms, df = _df_convert_dtypes(df)
+
+    def decode_bytes(row: dict) -> dict:
+        for col_nm in byte_col_nms:
+            row[col_nm] = b64decode(row[col_nm])
+        return row
+
+    rows = orjsonic.loads(orjsonic.dumps(df.to_dict(orient='records')))
+    if len(byte_col_nms) == 0:
+        return rows
+    rows = list(map(decode_bytes, rows))
+    return rows

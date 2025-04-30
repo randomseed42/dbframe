@@ -1,11 +1,12 @@
 import os
 from pathlib import Path
 
+import pandas as pd
 import pytest
 from sqlalchemy import Boolean, Column, Float, Integer, String
 from sqlalchemy.exc import IntegrityError, OperationalError
 
-from dbframe.sqlite import Order, Sqlite, Where
+from dbframe import Order, Sqlite, SqliteDF, Where
 
 
 @pytest.fixture
@@ -209,15 +210,42 @@ class TestSqliteTable:
         db.drop_table(tb_nm='test_table')
         pytest.raises(ValueError, db.get_table, tb_nm='test_table')
 
-    @pytest.mark.skip('Not implemented yet')
     def test_truncate_table(self, tmp_dir):
         db_path = Path(tmp_dir, 'data.db')
         db = Sqlite(db_path=db_path)
-        db.create_table(tb_nm='test_table', cols=[Column('id', Integer, primary_key=True), Column('name', String)])
-        db.insert(tb_nm='test_table', values={'id': 1, 'name': 'Alice'})
-        db.insert(tb_nm='test_table', values={'id': 2, 'name': 'Bob'})
-        db.truncate_table(tb_nm='test_table')
-        assert len(db.select(tb_nm='test_table')) == 0
+        db.create_table(
+            tb_nm='test_table',
+            cols=[Column('id', Integer, primary_key=True, autoincrement=True), Column('name', String)],
+            sqlite_autoincrement=True,
+        )
+        db.insert_row(tb_nm='test_table', row={'name': 'Alice'})
+        db.insert_row(tb_nm='test_table', row={'name': 'Bob'})
+        db.insert_row(tb_nm='test_table', row={'name': 'Charlie'})
+        db.truncate_table(tb_nm='test_table', restart=False)
+        assert len(db.select_rows(tb_nm='test_table')[1]) == 0
+        db.insert_row(tb_nm='test_table', row={'name': 'David'})
+        assert db.select_rows(tb_nm='test_table')[1] == [(4, 'David')]
+        db.truncate_table(tb_nm='test_table', restart=True)
+        db.insert_row(tb_nm='test_table', row={'name': 'Eddy'})
+        assert db.select_rows(tb_nm='test_table')[1] == [(1, 'Eddy')]
+
+        db_path = Path(tmp_dir, 'data2.db')
+        db = Sqlite(db_path=db_path)
+        db.create_table(
+            tb_nm='test_table',
+            cols=[Column('id', Integer, primary_key=True, autoincrement=False), Column('name', String)],
+            sqlite_autoincrement=False,
+        )
+        db.insert_row(tb_nm='test_table', row={'name': 'Alice'})
+        db.insert_row(tb_nm='test_table', row={'name': 'Bob'})
+        db.insert_row(tb_nm='test_table', row={'name': 'Charlie'})
+        db.truncate_table(tb_nm='test_table', restart=False)
+        assert len(db.select_rows(tb_nm='test_table')[1]) == 0
+        db.insert_row(tb_nm='test_table', row={'name': 'David'})
+        assert db.select_rows(tb_nm='test_table')[1] == [(1, 'David')]
+        db.truncate_table(tb_nm='test_table', restart=True)
+        db.insert_row(tb_nm='test_table', row={'name': 'Eddy'})
+        assert db.select_rows(tb_nm='test_table')[1] == [(1, 'Eddy')]
 
 
 class TestSqliteColumn:
@@ -475,3 +503,54 @@ class TestSqliteRow:
             ('Bob', 30),
             ('Charlie', 40),
         ]
+
+
+class TestSqliteDF:
+    def test_df_create_table(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = SqliteDF(db_path=db_path)
+        df = pd.DataFrame({'id': [1, 2, 3], 'name': ['Alice', 'Bob', 'Charlie']})
+        db.df_create_table(df=df, tb_nm='test_table', primary_col_nm='id')
+        assert list(db.get_tables().keys()) == ['test_table']
+        assert list(db.get_columns(tb_nm='test_table').keys()) == ['id', 'name']
+
+    def test_df_insert_rows(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = SqliteDF(db_path=db_path)
+        df = pd.DataFrame(
+            {
+                'id': [1, 2, 3],
+                'name': ['Alice', 'Bob', 'Charlie'],
+                'age': [20, None, 40],
+                'gender': ['F', 'M', ''],
+                'BDay': [None, '2010-01-01', '2011-05-01'],
+                'data': [b'a', b'b', b'\xff'],
+            }
+        )
+        df['BDay'] = pd.to_datetime(df['BDay'])
+        df['data'] = df['data'].astype(bytes)
+        db.df_create_table(df=df, tb_nm='test_table', primary_col_nm='id')
+        db.df_insert_rows(df=df, tb_nm='test_table')
+        assert db.select_rows(tb_nm='test_table') == (
+            ['id', 'name', 'age', 'gender', 'bday', 'data'],
+            [
+                (1, 'Alice', 20, 'F', None, b'a'),
+                (2, 'Bob', None, 'M', '2010-01-01 00:00:00', b'b'),
+                (3, 'Charlie', 40, None, '2011-05-01 00:00:00', b'\xff'),
+            ],
+        )
+
+    def test_df_select_rows(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = SqliteDF(db_path=db_path)
+        df = pd.DataFrame({'id': [1, 2, 3], 'name': ['Alice', 'Bob', 'Charlie']})
+        db.df_create_table(df=df, tb_nm='test_table', primary_col_nm='id')
+        db.df_insert_rows(df=df, tb_nm='test_table')
+        pd.testing.assert_frame_equal(
+            db.df_select_rows(tb_nm='test_table'), pd.DataFrame({'id': [1, 2, 3], 'name': ['Alice', 'Bob', 'Charlie']})
+        )
+        pd.testing.assert_frame_equal(
+            db.df_select_rows(tb_nm='test_table', col_nms=['name']), pd.DataFrame({'name': ['Alice', 'Bob', 'Charlie']})
+        )
+        pytest.raises(ValueError, db.df_select_rows, tb_nm='test_table', col_nms=[])
+        pytest.raises(ValueError, db.df_select_rows, tb_nm='test_table', col_nms=['name', 'age'])
