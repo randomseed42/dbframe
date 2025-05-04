@@ -49,6 +49,8 @@ class Sqlite:
     def get_abs_db_path(db_path: str | os.PathLike | pathlib.Path) -> str:
         if db_path == ':memory:':
             return db_path
+        if str(db_path).startswith(':') and str(db_path).endswith(':'):
+            raise ValueError('Only :memory: is allowed for this style of db_path')
         db_path = os.path.abspath(os.path.normpath(db_path))
         return db_path
 

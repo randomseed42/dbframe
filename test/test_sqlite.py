@@ -52,7 +52,8 @@ class TestSqliteDatabase:
     def test_validate_conn(self, tmp_dir):
         assert Sqlite().validate_conn() is True
         assert Sqlite(db_path=Path(tmp_dir, 'data.db')).validate_conn() is True
-        pytest.raises(OperationalError, Sqlite(db_path=r'c:\Windows\data.db', verbose=True).validate_conn)
+        if os.name == 'nt':
+            pytest.raises(OperationalError, Sqlite(db_path=r'c:\Windows\data.db', verbose=True).validate_conn)
 
     def test_create_database(self, tmp_dir):
         assert Sqlite().create_database(db_path=Path(tmp_dir, 'data.db')) == str(Path(tmp_dir, 'data.db'))
@@ -60,7 +61,10 @@ class TestSqliteDatabase:
             Path(tmp_dir, 'data2.db')
         )
         pytest.raises(ValueError, Sqlite(db_path=Path(tmp_dir, 'data.db')).create_database, db_path=':memory:')
-        pytest.raises(OperationalError, Sqlite(db_path=Path(tmp_dir, 'data.db')).create_database, db_path=':invalid_file:')
+        if os.name == 'nt':
+            pytest.raises(OperationalError, Sqlite(db_path=Path(tmp_dir, 'data.db')).create_database, db_path=':invalid_file:')
+        else:
+            pytest.raises(ValueError, Sqlite(db_path=Path(tmp_dir, 'data.db')).create_database, db_path=':invalid_file:')
         pytest.raises(TypeError, Sqlite(db_path=Path(tmp_dir, 'data.db')).create_database)
 
     def test_get_database(self, tmp_dir):

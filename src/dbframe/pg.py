@@ -77,7 +77,6 @@ class Pg:
 
     def validate_conn(self) -> bool:
         with self.engine.connect():
-            breakpoint()
             return True
 
     # Database CRUD
