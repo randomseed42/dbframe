@@ -440,7 +440,7 @@ class Sqlite:
             self._verbose_print(f'Deleted {cur.rowcount} rows from table {tb_nm}')
             return cur.rowcount
 
-    # Execute SQL
+    # SQL Execution
     def _execute_sql(self, sql: str) -> CursorResult[Any]:
         with self.engine.connect() as conn:
             cur = conn.execute(text(sql))
