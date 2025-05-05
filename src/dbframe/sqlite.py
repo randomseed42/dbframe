@@ -383,7 +383,7 @@ class Sqlite:
     def select_rows(
         self,
         tb_nm: str,
-        col_nms: list[str] = None,
+        col_nms: Sequence[str] = None,
         where: Where | Sequence = None,
         order: Order | Sequence[Order] = None,
         limit: int = None,

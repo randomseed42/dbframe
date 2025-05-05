@@ -26,3 +26,7 @@ class TestPgDatabase:
     def test_validate_conn(self):
         pg = Pg(**PG_CONN)
         assert pg.validate_conn()
+        conn_kw = PG_CONN.copy()
+        conn_kw.update(dbname='non_existent_db')
+        pg = Pg(**conn_kw)
+        pytest.raises(OperationalError, pg.validate_conn)

@@ -47,6 +47,7 @@ class Pg:
         self.user = user or os.getenv('PG_USER', 'postgres')
         self.password = password or os.getenv('PG_PASS', 'postgres')
         self.dbname = dbname or os.getenv('PG_DBNAME', 'postgres')
+        self.dbname = NameValidator.dbname(self.dbname)
         self.verbose = verbose
         self.url = self.get_url()
         self.engine = create_engine(
@@ -65,25 +66,46 @@ class Pg:
         if self.verbose:
             print(msg)
 
-    def get_url(self) -> str:
+    def _get_url(self, dbname: str) -> str:
         url_template = 'postgresql+psycopg2://{user}:{password}@{host}:{port}/{dbname}'
         return url_template.format(
             user=self.user,
             password=quote_plus(self.password),
             host=self.host,
             port=self.port,
-            dbname=self.dbname,
+            dbname=dbname,
         )
 
+    def get_url(self) -> str:
+        return self._get_url(dbname=self.dbname)
+    
     def validate_conn(self) -> bool:
         with self.engine.connect():
             return True
 
     # Database CRUD
-    def create_database(self):
+    def create_database(self, dbname: str, **kwargs) -> str:
+        dbname = NameValidator.dbname(dbname)
+        engine = create_engine(self.url_default)
+        with engine.connect() as conn:
+            cur = conn.execute(stmt)
+            rows = cur.fetchall()
+            databases = [row[0] for row in rows]
+            return databases
         ...
 
-    def get_databases(self):
+    def get_database(self, dbname: str) -> str | None:
+        dbname = NameValidator.dbname(dbname)
+        stmt = text(f'SELECT datname FROM pg_catalog.pg_database WHERE datname = {dbname};')
+        engine = create_engine(self.url_default)
+        with engine.connect() as conn:
+            cur = conn.execute(stmt)
+            rows = cur.fetchall()
+            databases = [row[0] for row in rows]
+            return databases
+        ...
+
+    def get_databases(self, dbname: str) -> str | None:
         ...
 
     def drop_database(self):
@@ -153,7 +175,20 @@ class Pg:
     def insert_rows(self):
         ...
 
-    def select_rows(self):
+    def select_rows(
+        self,
+        schema_nm: str,
+        tb_nm: str,
+        col_nms: Sequence[str] = None,
+        where: Where | Sequence = None,
+        order: Order | Sequence[Order] = None,
+        limit: int = None,
+        offset: int = None,
+        **kwargs,
+    ):
+        schema_nm = NameValidator.schema(schema_nm)
+        tb_nm = NameValidator.table(tb_nm)
+        col_nms = [NameValidator.column(col_nm) for col_nm in col_nms] if col_nms else None
         ...
 
     def update_rows(self):
