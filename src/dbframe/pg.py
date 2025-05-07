@@ -20,18 +20,20 @@ from sqlalchemy import (
     inspect,
     select,
     text,
+    TextClause,
+    bindparam,
 )
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.util import FacadeDict
+from sqlalchemy.sql.sqltypes import DATETIME_TIMEZONE, TypeEngine
 
 from .clause import Order, Where, order_parser, where_parser
-from .dtype import df_to_rows, df_to_schema_items
+from .dtype import df_to_rows, df_to_schema_items, object_to_sql_dtype
 from .validator import NameValidator
-from .sqlite import Sqlite
 
 
-class Pg:
+class PG:
     def __init__(
         self,
         host: str = None,
@@ -78,102 +80,380 @@ class Pg:
 
     def get_url(self) -> str:
         return self._get_url(dbname=self.dbname)
-    
+
     def validate_conn(self) -> bool:
         with self.engine.connect():
             return True
 
+    def dispose(self):
+        self.engine.dispose()
+
     # Database CRUD
-    def create_database(self, dbname: str, **kwargs) -> str:
+    def create_database(self, dbname: str) -> str:
         dbname = NameValidator.dbname(dbname)
-        engine = create_engine(self.url_default)
-        with engine.connect() as conn:
-            cur = conn.execute(stmt)
-            rows = cur.fetchall()
-            databases = [row[0] for row in rows]
-            return databases
-        ...
+        pg = PG(host=self.host, port=self.port, user=self.user, password=self.password, dbname='postgres', verbose=self.verbose)
+        if pg.get_database(dbname=dbname) is not None:
+            raise ValueError(f'Database {dbname} already exists.')
+        stmt = text(f"CREATE DATABASE {dbname} LOCALE 'en_US.utf8' ENCODING UTF8 TEMPLATE template0;")
+        pg._execute_sql(stmt)
+        self._verbose_print(f'Created database {dbname}.')
+        return dbname
 
     def get_database(self, dbname: str) -> str | None:
         dbname = NameValidator.dbname(dbname)
-        stmt = text(f'SELECT datname FROM pg_catalog.pg_database WHERE datname = {dbname};')
-        engine = create_engine(self.url_default)
-        with engine.connect() as conn:
-            cur = conn.execute(stmt)
-            rows = cur.fetchall()
-            databases = [row[0] for row in rows]
-            return databases
-        ...
+        pg = PG(host=self.host, port=self.port, user=self.user, password=self.password, dbname='postgres', verbose=self.verbose)
+        stmt = text('SELECT datname FROM pg_catalog.pg_database WHERE datname = :dbname;').bindparams(dbname=dbname)
+        cur = pg._execute_sql(stmt)
+        row = cur.fetchone()
+        if row is None:
+            return
+        return row[0]
 
-    def get_databases(self, dbname: str) -> str | None:
-        ...
+    def get_databases(self) -> Sequence[str] | None:
+        pg = PG(host=self.host, port=self.port, user=self.user, password=self.password, dbname='postgres', verbose=self.verbose)
+        stmt = text('SELECT datname FROM pg_catalog.pg_database;')
+        cur = pg._execute_sql(stmt)
+        rows = cur.fetchall()
+        return [r[0] for r in rows]
 
-    def drop_database(self):
-        ...
+    def drop_database(self, dbname: str) -> str:
+        dbname = self.get_database(dbname)
+        if dbname is None:
+            raise ValueError(f'Database {dbname} does not exist.')
+        if dbname == self.dbname:
+            raise ValueError(f'Cannot drop the current database {dbname}.')
+        pg = PG(host=self.host, port=self.port, user=self.user, password=self.password, dbname='postgres', verbose=self.verbose)
+        stmt = text(f'DROP DATABASE {dbname};')
+        pg._execute_sql(stmt)
+        self._verbose_print(f'Dropped database {dbname}.')
+        return dbname
+
+    # Schema CRUD
+    def create_schema(self, schema_nm: str) -> str | None:
+        schema_nm = NameValidator.schema(schema_nm)
+        if self.get_schema(schema_nm=schema_nm) is not None:
+            raise ValueError(f'Schema {schema_nm} already exists.')
+        stmt = text(f'CREATE SCHEMA IF NOT EXISTS {schema_nm};')
+        self._execute_sql(stmt)
+        self._verbose_print(f'Created schema {schema_nm}.')
+        return schema_nm
+
+    def get_schema(self, schema_nm: str) -> str | None:
+        schema_nm = NameValidator.schema(schema_nm)
+        stmt = text(f"SELECT schema_name FROM information_schema.schemata WHERE schema_name = '{schema_nm}';")
+        cur = self._execute_sql(stmt)
+        row = cur.fetchone()
+        if row is None:
+            return
+        return row[0]
+
+    def get_schemas(self) -> Sequence[str] | None:
+        stmt = text('SELECT schema_name FROM information_schema.schemata;')
+        cur = self._execute_sql(stmt)
+        rows = cur.fetchall()
+        return [r[0] for r in rows]
+
+    def drop_schema(self, schema_nm: str, cascade: bool = False) -> str | None:
+        schema_nm = NameValidator.schema(schema_nm)
+        if self.get_schema(schema_nm=schema_nm) is None:
+            raise ValueError(f'Schema {schema_nm} does not exist.')
+        stmt = text(f'DROP SCHEMA {schema_nm} {"CASCADE" if cascade else ""};')
+        self._execute_sql(stmt)
+        self._verbose_print(f'Dropped schema {schema_nm}.')
+        return schema_nm
 
     # Table CRUD
-    def get_table(self):
-        ...
+    def create_table(
+        self,
+        schema_nm: str,
+        tb_nm: str,
+        cols: Sequence[Column | Constraint | Index | UniqueConstraint],
+        **kwargs,
+    ) -> Table:
+        schema_nm = NameValidator.schema(schema_nm)
+        tb_nm = NameValidator.table(tb_nm)
+        metadata = MetaData(schema=schema_nm)
+        for col in cols:
+            col.name = NameValidator.column(col.name)
+        tb = Table(tb_nm, metadata, *cols, **kwargs)
+        tb.create(bind=self.engine, checkfirst=False)
+        self._verbose_print(f'Table {schema_nm}.{tb_nm} created.')
+        return self.get_table(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
 
-    def get_tables(self):
-        ...
+    def get_table(self, schema_nm: str, tb_nm: str, **kwargs) -> Table:
+        schema_nm = NameValidator.schema(schema_nm)
+        tb_nm = NameValidator.table(tb_nm)
+        metadata = MetaData(schema=schema_nm)
+        try:
+            tb = Table(tb_nm, metadata, autoload_with=self.engine, **kwargs)
+            return tb
+        except NoSuchTableError:
+            raise ValueError(f'Table {schema_nm}.{tb_nm} does not exist.')
 
-    def create_table(self):
-        ...
+    def get_tables(self, schema_nm: str, views: bool = False, **kwargs) -> dict[str, Table] | FacadeDict | None:
+        schema_nm = NameValidator.schema(schema_nm)
+        metadata = MetaData(schema=schema_nm)
+        metadata.reflect(bind=self.engine, views=views, **kwargs)
+        return metadata.tables
 
-    def rename_table(self):
-        ...
+    def rename_table(self, schema_nm: str, tb_nm: str, new_tb_nm: str) -> str:
+        schema_nm = NameValidator.schema(schema_nm)
+        tb_nm = NameValidator.table(tb_nm)
+        new_tb_nm = NameValidator.table(new_tb_nm)
+        stmt = text(f'ALTER TABLE {schema_nm}.{tb_nm} RENAME TO {new_tb_nm};')
+        self._execute_sql(stmt)
+        self._verbose_print(f'Table {schema_nm}.{tb_nm} renamed to {new_tb_nm}.')
+        return new_tb_nm
 
-    def drop_table(self):
-        ...
+    def drop_table(self, schema_nm: str, tb_nm: str, **kwargs) -> str:
+        schema_nm = NameValidator.schema(schema_nm)
+        tb_nm = NameValidator.table(tb_nm)
+        tb = self.get_table(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
+        tb.drop(bind=self.engine, checkfirst=False, **kwargs)
+        self._verbose_print(f'Table {schema_nm}.{tb_nm} dropped.')
+        return tb_nm
 
-    def truncate_table(self):
-        ...
+    def truncate_table(self, schema_nm: str, tb_nm: str, restart: bool = True) -> str:
+        schema_nm = NameValidator.schema(schema_nm)
+        tb_nm = NameValidator.table(tb_nm)
+        stmt = text(f'TRUNCATE TABLE {schema_nm}.{tb_nm} {"RESTART IDENTITY" if restart else ""};')
+        self._execute_sql(stmt)
+        self._verbose_print(f'Table {schema_nm}.{tb_nm} truncated.')
+        return tb_nm
 
     # Column CRUD
-    def add_column(self):
-        ...
+    def add_column(self, schema_nm: str, tb_nm: str, col: Column, **kwargs) -> str:
+        schema_nm = NameValidator.schema(schema_nm)
+        tb_nm = NameValidator.table(tb_nm)
+        col.name = NameValidator.column(col.name)
+        with self.engine.connect() as conn:
+            ctx = MigrationContext.configure(conn)
+            op = Operations(ctx)
+            op.add_column(tb_nm, col, schema=schema_nm, **kwargs)
+            self._verbose_print(f'Column {col.name} added to table {schema_nm}.{tb_nm}.')
+            return col.name
 
-    def add_columns(self):
-        ...
+    def add_columns(self, schema_nm: str, tb_nm: str, cols: Sequence[Column], **kwargs) -> Sequence[str]:
+        schema_nm = NameValidator.schema(schema_nm)
+        tb_nm = NameValidator.table(tb_nm)
+        new_col_nms = []
+        with self.engine.connect() as conn:
+            ctx = MigrationContext.configure(conn)
+            op = Operations(ctx)
+            for col in cols:
+                col_nm = NameValidator.column(col.name)
+                col.name = col_nm
+                op.add_column(tb_nm, col, schema=schema_nm, **kwargs)
+                new_col_nms.append(col_nm)
+            self._verbose_print(f'Columns {new_col_nms} added to table {schema_nm}.{tb_nm}.')
+            return new_col_nms
 
-    def get_column(self):
-        ...
+    def get_column(self, schema_nm: str, tb_nm: str, col_nm: str, **kwargs) -> Column:
+        schema_nm = NameValidator.schema(schema_nm)
+        tb_nm = NameValidator.table(tb_nm)
+        col_nm = NameValidator.column(col_nm)
+        tb = self.get_table(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
+        col = tb.columns.get(col_nm)
+        if col is None:
+            raise ValueError(f'Column {col_nm} does not exist in table {schema_nm}.{tb_nm}.')
+        return col
 
-    def get_columns(self):
-        ...
+    def get_columns(self, schema_nm: str, tb_nm: str, **kwargs) -> dict[str, Column]:
+        schema_nm = NameValidator.schema(schema_nm)
+        tb_nm = NameValidator.table(tb_nm)
+        tb = self.get_table(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
+        return {col_nm: col for col_nm, col in tb.columns.items()}
 
-    def rename_column(self):
-        ...
+    def rename_column(self, schema_nm: str, tb_nm: str, col_nm: str, new_col_nm: str, **kwargs) -> Column:
+        schema_nm = NameValidator.schema(schema_nm)
+        tb_nm = NameValidator.table(tb_nm)
+        self.get_table(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
+        col_nm = NameValidator.column(col_nm)
+        self.get_column(schema_nm=schema_nm, tb_nm=tb_nm, col_nm=col_nm, **kwargs)
+        new_col_nm = NameValidator.column(new_col_nm)
+        if new_col_nm == col_nm:
+            raise ValueError(f'New column name {new_col_nm} is same with old column name {col_nm}.')
+        with self.engine.connect() as conn:
+            ctx = MigrationContext.configure(conn)
+            op = Operations(ctx)
+            op.alter_column(tb_nm, col_nm, new_column_name=new_col_nm, schema=schema_nm, **kwargs)
+            self._verbose_print(f'Column {col_nm} renamed to {new_col_nm} in table {schema_nm}.{tb_nm}.')
+        return self.get_column(schema_nm=schema_nm, tb_nm=tb_nm, col_nm=new_col_nm, **kwargs)
 
-    def alter_column(self):
-        ...
+    def alter_column(
+        self, schema_nm: str, tb_nm: str, col_nm: str, sql_dtype: str | TypeEngine | type, new_col_nm: str = None, **kwargs
+    ) -> Column:
+        schema_nm = NameValidator.schema(schema_nm)
+        tb_nm = NameValidator.table(tb_nm)
+        self.get_table(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
+        col_nm = NameValidator.column(col_nm)
+        self.get_column(schema_nm=schema_nm, tb_nm=tb_nm, col_nm=col_nm, **kwargs)
+        if new_col_nm is not None:
+            new_col_nm = NameValidator.column(new_col_nm)
+        if not isinstance(sql_dtype, TypeEngine):
+            sql_dtype = object_to_sql_dtype(sql_dtype)
+        with self.engine.connect() as conn:
+            ctx = MigrationContext.configure(conn)
+            op = Operations(ctx)
+            op.alter_column(tb_nm, col_nm, new_column_name=new_col_nm, type_=sql_dtype, schema=schema_nm, **kwargs)
+            self._verbose_print(f'Column {col_nm} altered to {new_col_nm} in table {schema_nm}.{tb_nm}.')
+        return self.get_column(schema_nm=schema_nm, tb_nm=tb_nm, col_nm=new_col_nm or col_nm, **kwargs)
 
-    def drop_column(self):
-        ...
+    def drop_column(self, schema_nm: str, tb_nm: str, col_nm: str, **kwargs) -> str:
+        schema_nm = NameValidator.schema(schema_nm)
+        tb_nm = NameValidator.table(tb_nm)
+        self.get_table(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
+        col_nm = NameValidator.column(col_nm)
+        self.get_column(schema_nm=schema_nm, tb_nm=tb_nm, col_nm=col_nm, **kwargs)
+        with self.engine.connect() as conn:
+            ctx = MigrationContext.configure(conn)
+            op = Operations(ctx)
+            op.drop_column(tb_nm, col_nm, schema=schema_nm, **kwargs)
+            self._verbose_print(f'Column {col_nm} dropped from table {schema_nm}.{tb_nm}.')
+            return col_nm
 
-    def drop_columns(self):
-        ...
+    def drop_columns(self, schema_nm: str, tb_nm: str, col_nms: Sequence[str], **kwargs) -> Sequence[str]:
+        schema_nm = NameValidator.schema(schema_nm)
+        tb_nm = NameValidator.table(tb_nm)
+        self.get_table(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
+        dropped_col_nms = []
+        with self.engine.connect() as conn:
+            ctx = MigrationContext.configure(conn)
+            op = Operations(ctx)
+            for col_nm in col_nms:
+                col_nm = NameValidator.column(col_nm)
+                self.get_column(schema_nm=schema_nm, tb_nm=tb_nm, col_nm=col_nm, **kwargs)
+                op.drop_column(tb_nm, col_nm, schema=schema_nm, **kwargs)
+                dropped_col_nms.append(col_nm)
+            self._verbose_print(f'Columns {dropped_col_nms} dropped from table {schema_nm}.{tb_nm}.')
+            return dropped_col_nms
 
     # Index CRUD
-    def create_index(self):
-        ...
+    def create_index(
+        self, schema_nm: str, tb_nm: str, col_nms: Sequence[str], idx_nm: str = None, unique: bool = False, **kwargs
+    ) -> Index:
+        schema_nm = NameValidator.schema(schema_nm)
+        tb_nm = NameValidator.table(tb_nm)
+        col_nms = [NameValidator.column(col_nm) for col_nm in col_nms]
+        idx_nm = NameValidator.index(idx_nm or f'idx_{tb_nm}_{"_".join(col_nms)}')
+        with self.engine.connect() as conn:
+            ctx = MigrationContext.configure(conn)
+            op = Operations(ctx)
+            op.create_index(idx_nm, tb_nm, col_nms, unique=unique, schema=schema_nm, **kwargs)
+            self._verbose_print(f'Index {idx_nm} created on table {schema_nm}.{tb_nm} with columns {col_nms}.')
+        return self.get_index(schema_nm=schema_nm, tb_nm=tb_nm, idx_nm=idx_nm, **kwargs)
 
-    def get_index(self):
-        ...
+    def get_index(
+        self, schema_nm: str, tb_nm: str, col_nms: Sequence[str] = None, idx_nm: str = None, **kwargs
+    ) -> Index:
+        schema_nm = NameValidator.schema(schema_nm)
+        tb_nm = NameValidator.table(tb_nm)
+        if idx_nm is None and col_nms is None:
+            raise ValueError('Either idx_nm or col_nms must be provided.')
+        indexes = self.get_indexes(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
+        if idx_nm is not None:
+            if idx_nm in indexes:
+                return indexes.get(idx_nm)
+            raise ValueError(f'Index {idx_nm} does not exist in table {schema_nm}.{tb_nm}.')
+        if col_nms is not None:
+            col_nms = [NameValidator.column(col_nm) for col_nm in col_nms]
+            for col_nm in col_nms:
+                if col_nm not in self.get_columns(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs):
+                    raise ValueError(f'Column {col_nm} does not exist in table {schema_nm}.{tb_nm}.')
+            for idx_nm, idx in indexes.items():
+                if set(idx.columns.keys()) == set(col_nms):
+                    return idx
+            raise ValueError(f'Index with columns {col_nms} does not exist in table {schema_nm}.{tb_nm}.')
 
-    def get_indexes(self):
-        ...
+    def get_indexes(self, schema_nm: str, tb_nm: str, **kwargs):
+        schema_nm = NameValidator.schema(schema_nm)
+        tb_nm = NameValidator.table(tb_nm)
+        tb = self.get_table(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
+        return {idx.name: idx for idx in tb.indexes}
 
-    def drop_index(self):
-        ...
+    def drop_index(
+        self, schema_nm: str, tb_nm: str, col_nms: Sequence[str] = None, idx_nm: str = None, **kwargs
+    ) -> str:
+        schema_nm = NameValidator.schema(schema_nm)
+        tb_nm = NameValidator.table(tb_nm)
+        idx = self.get_index(schema_nm=schema_nm, tb_nm=tb_nm, col_nms=col_nms, idx_nm=idx_nm, **kwargs)
+        with self.engine.connect() as conn:
+            ctx = MigrationContext.configure(conn)
+            op = Operations(ctx)
+            op.drop_index(idx.name, tb_nm, schema=schema_nm, **kwargs)
+            self._verbose_print(f'Index {idx.name} dropped from table {schema_nm}.{tb_nm}.')
+            return idx.name
 
     # Row CRUD
-    def insert_row(self):
-        ...
+    def insert_row(
+        self,
+        schema_nm: str,
+        tb_nm: str,
+        row: dict[str, Any],
+        on_conflict: Literal['do_nothing', 'ignore', 'skip', 'update', 'replace', 'upsert'] = None,
+        row_key_validate: bool = False,
+        **kwargs,
+    ) -> Row:
+        schema_nm = NameValidator.schema(schema_nm)
+        tb_nm = NameValidator.table(tb_nm)
+        tb = self.get_table(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
+        if row_key_validate:
+            row = {NameValidator.column(key): val for key, val in row.items()}
+        with self.engine.connect() as conn:
+            if on_conflict in ('update', 'replace', 'upsert'):
+                stmt = insert(tb).values(**row).on_conflict_do_update(index_elements=tb.primary_key.columns, set_=row)
+                cur = conn.execute(stmt)
+                self._verbose_print(f'Inserted or replaced row into table {schema_nm}.{tb_nm}.')
+            elif on_conflict in ('do_nothing', 'ignore', 'skip'):
+                stmt = insert(tb).values(**row).on_conflict_do_nothing()
+                cur = conn.execute(stmt)
+                self._verbose_print(f'Inserted or ignored row into table {schema_nm}.{tb_nm}.')
+            elif on_conflict is None:
+                stmt = insert(tb).values(**row)
+                cur = conn.execute(stmt)
+                self._verbose_print(f'Inserted row into table {schema_nm}.{tb_nm}.')
+            else:
+                raise ValueError(f'Invalid on_conflict value: {on_conflict}.')
+            return cur.inserted_primary_key
 
-    def insert_rows(self):
-        ...
+    def insert_rows(
+        self,
+        schema_nm: str,
+        tb_nm: str,
+        rows: list[dict[str, Any]],
+        on_conflict: Literal['do_nothing', 'ignore', 'skip', 'update', 'replace', 'upsert'] = None,
+        row_key_validate: bool = False,
+        **kwargs,
+    ) -> list[Row]:
+        schema_nm = NameValidator.schema(schema_nm)
+        tb_nm = NameValidator.table(tb_nm)
+        tb = self.get_table(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
+        if row_key_validate:
+            rows = [{NameValidator.column(key): val for key, val in row.items()} for row in rows]
+        with self.engine.connect() as conn:
+            if on_conflict in ('update', 'replace', 'upsert'):
+                stmt = insert(tb).values(rows)
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=tb.primary_key.columns,
+                    set_={
+                        col_nm: getattr(stmt.excluded, col_nm)
+                        for col_nm in tb.columns.keys()
+                        if col_nm not in tb.primary_key.columns
+                    },
+                )
+                cur = conn.execute(stmt)
+                self._verbose_print(f'Inserted or replaced rows into table {schema_nm}.{tb_nm}.')
+            elif on_conflict in ('do_nothing', 'ignore', 'skip'):
+                stmt = insert(tb).values(rows).on_conflict_do_nothing()
+                cur = conn.execute(stmt)
+                self._verbose_print(f'Inserted or ignored rows into table {schema_nm}.{tb_nm}.')
+            elif on_conflict is None:
+                stmt = insert(tb).values(rows)
+                cur = conn.execute(stmt)
+                self._verbose_print(f'Inserted rows into table {schema_nm}.{tb_nm}.')
+            else:
+                raise ValueError(f'Invalid on_conflict value: {on_conflict}.')
+            return cur.inserted_primary_key_rows
 
     def select_rows(
         self,
@@ -185,42 +465,83 @@ class Pg:
         limit: int = None,
         offset: int = None,
         **kwargs,
-    ):
+    ) -> tuple[list[str], list[Row]] | None:
         schema_nm = NameValidator.schema(schema_nm)
         tb_nm = NameValidator.table(tb_nm)
-        col_nms = [NameValidator.column(col_nm) for col_nm in col_nms] if col_nms else None
-        ...
+        self.get_table(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
+        current_cols = self.get_columns(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
+        if col_nms is None:
+            selected_cols = list(current_cols.values())
+        else:
+            selected_cols = []
+            for col_nm in col_nms:
+                col_nm = NameValidator.column(col_nm)
+                if col_nm not in current_cols:
+                    raise ValueError(f'Column {col_nm} does not exist in table {schema_nm}.{tb_nm}.')
+                selected_cols.append(current_cols.get(col_nm))
+        if len(selected_cols) == 0:
+            raise ValueError('No columns selected.')
 
-    def update_rows(self):
-        ...
+        where_cond = where_parser(where, cols=current_cols, tb=None)
+        order_cond = order_parser(order, cols=current_cols, tb=None)
+        with self.engine.connect() as conn:
+            stmt = select(*selected_cols).where(where_cond).order_by(*order_cond).offset(offset).limit(limit)
+            cur = conn.execute(stmt)
+            cols = list(cur.keys())
+            rows = cur.fetchall()
+            self._verbose_print(f'Selected {len(rows)} rows from table {schema_nm}.{tb_nm}.')
+            return cols, rows
 
-    def delete_rows(self):
-        ...
+    def update_rows(self, schema_nm: str, tb_nm: str, set_values: dict[str, Any], where: Where | Sequence = None, **kwargs) -> int:
+        schema_nm = NameValidator.schema(schema_nm)
+        tb_nm = NameValidator.table(tb_nm)
+        tb = self.get_table(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
+        _set_values = {}
+        for col_nm, val in set_values.items():
+            col_nm = NameValidator.column(col_nm)
+            if col_nm not in tb.columns:
+                raise ValueError(f'Column {col_nm} does not exist in table {schema_nm}.{tb_nm}.')
+            _set_values[col_nm] = val
+        where_cond = where_parser(where, cols=None, tb=tb)
+        with self.engine.connect() as conn:
+            stmt = tb.update().where(where_cond)
+            cur = conn.execute(stmt, _set_values)
+            self._verbose_print(f'Updated {cur.rowcount} rows in table {schema_nm}.{tb_nm}.')
+            return cur.rowcount
+
+    def delete_rows(self, schema_nm: str, tb_nm: str, where: Where | Sequence = None, **kwargs) -> int:
+        schema_nm = NameValidator.schema(schema_nm)
+        tb_nm = NameValidator.table(tb_nm)
+        tb = self.get_table(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
+        where_cond = where_parser(where, cols=None, tb=tb)
+        with self.engine.connect() as conn:
+            stmt = tb.delete().where(where_cond)
+            cur = conn.execute(stmt)
+            self._verbose_print(f'Deleted {cur.rowcount} rows from table {schema_nm}.{tb_nm}.')
+            return cur.rowcount
 
     # SQL Execution
-    def _execute_sql(self, sql: str):
-        ...
+    def _execute_sql(self, sql: str | TextClause) -> CursorResult[Any]:
+        with self.engine.connect() as conn:
+            stmt = text(sql) if isinstance(sql, str) else sql
+            cur = conn.execute(stmt)
+            self._verbose_print(f'Executed SQL: {stmt}')
+            return cur
 
 
-class PgDF(Pg):
+class PGDF(PG):
     def __init__(self):
         super().__init__()
         pass
 
-    def df_create_table(self):
-        ...
+    def df_create_table(self): ...
 
-    def df_add_columns(self):
-        ...
+    def df_add_columns(self): ...
 
-    def df_alter_columns(self):
-        ...
+    def df_alter_columns(self): ...
 
-    def df_copy_rows(self):
-        ...
+    def df_copy_rows(self): ...
 
-    def df_insert_rows(self):
-        ...
+    def df_insert_rows(self): ...
 
-    def df_select_rows(self):
-        ...
+    def df_select_rows(self): ...

@@ -61,10 +61,7 @@ class TestSqliteDatabase:
             Path(tmp_dir, 'data2.db')
         )
         pytest.raises(ValueError, Sqlite(db_path=Path(tmp_dir, 'data.db')).create_database, db_path=':memory:')
-        if os.name == 'nt':
-            pytest.raises(OperationalError, Sqlite(db_path=Path(tmp_dir, 'data.db')).create_database, db_path=':invalid_file:')
-        else:
-            pytest.raises(ValueError, Sqlite(db_path=Path(tmp_dir, 'data.db')).create_database, db_path=':invalid_file:')
+        pytest.raises(ValueError, Sqlite(db_path=Path(tmp_dir, 'data.db')).create_database, db_path=':invalid_file:')
         pytest.raises(TypeError, Sqlite(db_path=Path(tmp_dir, 'data.db')).create_database)
 
     def test_get_database(self, tmp_dir):
@@ -106,6 +103,8 @@ class TestSqliteTable:
         cols = [Column('id', Integer, primary_key=True), Column('name', String)]
         db.create_table(tb_nm='test_table', cols=cols)
         assert db.get_table(tb_nm='test_table').name == 'test_table'
+        cols = [Column('id', Integer, primary_key=True), Column('name', String)]
+        pytest.raises(OperationalError, db.create_table, tb_nm='test_table', cols=cols)
         assert db.get_table(tb_nm='test_table').columns.keys() == ['id', 'name']
         assert db.get_table(tb_nm='test_table').columns['id'].primary_key is True
         assert isinstance(db.get_table(tb_nm='test_table').columns['name'].type, String)
@@ -213,6 +212,7 @@ class TestSqliteTable:
         db.create_table(tb_nm='test_table', cols=[Column('id', Integer, primary_key=True), Column('name', String)])
         db.drop_table(tb_nm='test_table')
         pytest.raises(ValueError, db.get_table, tb_nm='test_table')
+        pytest.raises(ValueError, db.drop_table, tb_nm='test_table')
 
     def test_truncate_table(self, tmp_dir):
         db_path = Path(tmp_dir, 'data.db')

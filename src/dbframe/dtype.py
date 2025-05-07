@@ -159,7 +159,7 @@ def _object_to_sql_dtype(obj: Any) -> TypeEngine:
                 return DateTime
             else:
                 return DATETIME_TIMEZONE
-        raise TypeError(f'pandas series dtype {pd_type} not supported yet')
+        raise TypeError(f'pandas series dtype {pd_type} not supported yet.')
     if isinstance(obj, pd.Index):
         if isinstance(obj, pd.DatetimeIndex):
             if obj.tz is None:
@@ -177,7 +177,7 @@ def _object_to_sql_dtype(obj: Any) -> TypeEngine:
 def object_to_sql_dtype(obj: Any, dialect: Literal['sqlite', 'postgresql'] = None) -> TypeEngine:
     sql_dtype = _object_to_sql_dtype(obj)
     if sql_dtype is None:
-        raise TypeError(f'unsupported dtype {type(obj)}')
+        raise TypeError(f'unsupported dtype {type(obj)}.')
     if dialect == 'sqlite':
         if sql_dtype in (DateTime, Date, Time, DATETIME_TIMEZONE):
             return String
@@ -208,12 +208,12 @@ def _df_to_primary_col(
         _primary_col_nm = 'uid'
         primary_col = df.index
     elif primary_col_nm not in df.columns:
-        raise ValueError(f'primary column {primary_col_nm} not in dataframe')
+        raise ValueError(f'primary column {primary_col_nm} not in dataframe.')
     else:
         _primary_col_nm = NameValidator.column(primary_col_nm)
         primary_col = df[primary_col_nm]
     if not primary_col.is_unique:
-        raise ValueError(f'primary column {primary_col_nm} must be unique')
+        raise ValueError(f'primary column {primary_col_nm} must be unique.')
 
     sql_dtype = object_to_sql_dtype(primary_col, dialect=dialect)
 
@@ -221,12 +221,12 @@ def _df_to_primary_col(
         return Column(_primary_col_nm, sql_dtype, primary_key=True, autoincrement='auto')
     elif primary_col_autoinc is True:
         if sql_dtype is not Integer:
-            raise ValueError(f'primary column {primary_col_nm} must be integer for auto-increment')
+            raise ValueError(f'primary column {primary_col_nm} must be integer for auto-increment.')
         return Column(_primary_col_nm, sql_dtype, primary_key=True, autoincrement=True)
     elif primary_col_autoinc is False:
         return Column(_primary_col_nm, sql_dtype, primary_key=True)
     else:
-        raise ValueError(f'invalid primary_col_autoinc value {primary_col_autoinc}')
+        raise ValueError(f'invalid primary_col_autoinc value {primary_col_autoinc}.')
 
 
 def _df_to_index_constraint(df: pd.DataFrame, tb_nm: str, index_col_grp: str | Sequence[str]) -> Constraint:
@@ -235,10 +235,10 @@ def _df_to_index_constraint(df: pd.DataFrame, tb_nm: str, index_col_grp: str | S
     index_col_nms = []
     for index_col_nm in index_col_grp:
         if index_col_nm not in df.columns:
-            raise ValueError(f'index column {index_col_nm} not in dataframe')
+            raise ValueError(f'index column {index_col_nm} not in dataframe.')
         _index_col_nm = NameValidator.column(index_col_nm)
         if _index_col_nm in index_col_nms:
-            raise ValueError(f'index column {index_col_nm} already in index group')
+            raise ValueError(f'index column {index_col_nm} already in index group.')
         index_col_nms.append(_index_col_nm)
     index_nm = 'ix_{}_{}'.format(tb_nm, '_'.join(index_col_nms))
     index = Index(index_nm, *index_col_nms)
@@ -251,10 +251,10 @@ def _df_to_unique_constraint(df: pd.DataFrame, tb_nm: str, unique_col_grp: str |
     unique_col_nms = []
     for unique_col_nm in unique_col_grp:
         if unique_col_nm not in df.columns:
-            raise ValueError(f'unique column {unique_col_nm} not in dataframe')
+            raise ValueError(f'unique column {unique_col_nm} not in dataframe.')
         _unique_col_nm = NameValidator.column(unique_col_nm)
         if _unique_col_nm in unique_col_nms:
-            raise ValueError(f'unique column {unique_col_nm} already in unique group')
+            raise ValueError(f'unique column {unique_col_nm} already in unique group.')
         unique_col_nms.append(_unique_col_nm)
     unique_nm = 'uix_{}_{}'.format(tb_nm, '_'.join(unique_col_nms))
     unique = UniqueConstraint(*unique_col_nms, name=unique_nm)
