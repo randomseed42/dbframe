@@ -1,0 +1,37 @@
+[project]
+name = "dbframe"
+version = "0.1.0"
+description = "A python package to simplify CRUD operations between SQL databases and pandas dataframe"
+readme = "README.md"
+requires-python = ">=3.10"
+license-files = ["LICENSE"]
+authors = [{ name = "randomseed42", email = "randomseed42@protonmail.com" }]
+keywords = [
+  "database",
+  "crud",
+  "sql",
+  "pandas",
+  "dataframe",
+  "postgresql",
+  "sqlite",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+  "alembic",
+  "orjsonic",
+  "pandas",
+  "psycopg2",
+  "pyarrow",
+  "sqlalchemy",
+]
+
+[project.urls]
+Homepage = "https://github.com/randomseed42/dbframe"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
