@@ -1,14 +1,14 @@
-__version__ = '0.1.0'
+__version__ = '0.1.1'
 
 from .clause import Order, Where
+from .pgsql import Pgsql, PgsqlDF
 from .sqlite import Sqlite, SqliteDF
-from .pg import PG, PGDF
 
 __all__ = [
     '__version__',
     'Order',
-    'PG',
-    'PGDF',
+    'Pgsql',
+    'PgsqlDF',
     'Sqlite',
     'SqliteDF',
     'Where',

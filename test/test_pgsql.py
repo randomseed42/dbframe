@@ -4,7 +4,7 @@ from psycopg2.errors import UniqueViolation
 from sqlalchemy import Boolean, Column, Float, Integer, String
 from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 
-from dbframe import PGDF, Order, Where
+from dbframe import Order, PgsqlDF, Where
 
 PG_CONN = dict(
     host='127.0.0.1',
@@ -18,9 +18,9 @@ PG_CONN = dict(
 @pytest.fixture(scope='session')
 def pg():
     DEFAULT_PG_CONN = {**PG_CONN, 'dbname': 'postgres'}
-    DEFAULT_PG = PGDF(**DEFAULT_PG_CONN)
+    DEFAULT_PG = PgsqlDF(**DEFAULT_PG_CONN)
     DEFAULT_PG.create_database('test_db')
-    _pg = PGDF(**PG_CONN, verbose=False)
+    _pg = PgsqlDF(**PG_CONN, verbose=False)
     _pg.create_schema('test_schema')
     _pg.create_table('test_schema', 'test_table', [Column('id', Integer, primary_key=True), Column('name', String)])
     yield _pg
@@ -28,55 +28,55 @@ def pg():
     DEFAULT_PG.drop_database('test_db')
 
 
-class TestPGDatabase:
-    def test_get_url(self, pg: PGDF):
+class TestPgsqlDatabase:
+    def test_get_url(self, pg: PgsqlDF):
         assert pg.get_url() == 'postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/test_db'
 
-    def test_validate_conn(self, pg: PGDF):
+    def test_validate_conn(self, pg: PgsqlDF):
         assert pg.validate_conn()
         conn_kw = PG_CONN.copy()
         conn_kw.update(dbname='non_existent_db')
-        pg2 = PGDF(**conn_kw)
+        pg2 = PgsqlDF(**conn_kw)
         pytest.raises(OperationalError, pg2.validate_conn)
 
-    def test_create_database(self, pg: PGDF):
+    def test_create_database(self, pg: PgsqlDF):
         dbname = 'Test_DB2'
         assert pg.create_database(dbname) == 'test_db2'
         pg.drop_database(dbname)
 
-    def test_get_database(self, pg: PGDF):
+    def test_get_database(self, pg: PgsqlDF):
         assert pg.get_database('Test_DB') == 'test_db'
 
-    def test_get_databases(self, pg: PGDF):
+    def test_get_databases(self, pg: PgsqlDF):
         assert 'test_db' in pg.get_databases()
 
-    def test_drop_database(self, pg: PGDF):
+    def test_drop_database(self, pg: PgsqlDF):
         dbname = 'Test_DB2'
         pg.create_database(dbname)
         assert pg.drop_database(dbname) == 'test_db2'
 
 
-class TestPGSchema:
-    def test_create_schema(self, pg: PGDF):
+class TestPgsqlSchema:
+    def test_create_schema(self, pg: PgsqlDF):
         schema_nm = 'Test_Schema_2'
         pg.create_schema(schema_nm)
         assert pg.get_schema(schema_nm) == 'test_schema_2'
         pg.drop_schema(schema_nm)
 
-    def test_get_schema(self, pg: PGDF):
+    def test_get_schema(self, pg: PgsqlDF):
         assert pg.get_schema('Test_Schema') == 'test_schema'
 
-    def test_get_schemas(self, pg: PGDF):
+    def test_get_schemas(self, pg: PgsqlDF):
         assert 'test_schema' in pg.get_schemas()
 
-    def test_drop_schema(self, pg: PGDF):
+    def test_drop_schema(self, pg: PgsqlDF):
         schema_nm = 'Test_Schema_2'
         pg.create_schema(schema_nm)
         assert pg.drop_schema(schema_nm, cascade=True) == 'test_schema_2'
 
 
-class TestPGTable:
-    def test_create_table(self, pg: PGDF):
+class TestPgsqlTable:
+    def test_create_table(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         cols = [
@@ -91,23 +91,23 @@ class TestPGTable:
         pytest.raises(ValueError, pg.create_table, schema_nm, tb_nm, cols)
         pg.drop_table(schema_nm, tb_nm)
 
-    def test_table_exists(self, pg: PGDF):
+    def test_table_exists(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table'
         assert pg.table_exists(schema_nm, tb_nm)
         assert not pg.table_exists(schema_nm, 'non_existent_table')
         assert not pg.table_exists('non_existent_schema', 'test_table')
 
-    def test_get_table(self, pg: PGDF):
+    def test_get_table(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table'
         assert pg.get_table(schema_nm, tb_nm).name == 'test_table'
 
-    def test_get_tables(self, pg: PGDF):
+    def test_get_tables(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         assert f'{schema_nm}.test_table' in pg.get_tables(schema_nm).keys()
 
-    def test_rename_table(self, pg: PGDF):
+    def test_rename_table(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         cols = [
@@ -123,7 +123,7 @@ class TestPGTable:
         assert pg.get_table(schema_nm, new_tb_nm).name == 'test_table_3'
         pg.drop_table(schema_nm, new_tb_nm)
 
-    def test_drop_table(self, pg: PGDF):
+    def test_drop_table(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         cols = [
@@ -136,7 +136,7 @@ class TestPGTable:
         pg.create_table(schema_nm, tb_nm, cols)
         assert pg.drop_table(schema_nm, tb_nm) == 'test_table_2'
 
-    def test_truncate_table(self, pg: PGDF):
+    def test_truncate_table(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         cols = [
@@ -161,8 +161,8 @@ class TestPGTable:
         pg.drop_table(schema_nm, tb_nm)
 
 
-class TestPGColumn:
-    def test_add_column(self, pg: PGDF):
+class TestPgsqlColumn:
+    def test_add_column(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         cols = [
@@ -178,7 +178,7 @@ class TestPGColumn:
         pytest.raises(ProgrammingError, pg.add_column, schema_nm, tb_nm, Column('email', String(100)))
         pg.drop_table(schema_nm, tb_nm)
 
-    def test_add_columns(self, pg: PGDF):
+    def test_add_columns(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         cols = [
@@ -193,7 +193,7 @@ class TestPGColumn:
         assert pg.get_table(schema_nm, tb_nm).c.keys() == ['id', 'name', 'age', 'salary', 'is_active', 'email', 'phone']
         pg.drop_table(schema_nm, tb_nm)
 
-    def test_get_column(self, pg: PGDF):
+    def test_get_column(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         cols = [
@@ -207,7 +207,7 @@ class TestPGColumn:
         assert pg.get_column(schema_nm, tb_nm, 'age').name == 'age'
         pg.drop_table(schema_nm, tb_nm)
 
-    def test_get_columns(self, pg: PGDF):
+    def test_get_columns(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         cols = [
@@ -221,7 +221,7 @@ class TestPGColumn:
         assert list(pg.get_columns(schema_nm, tb_nm)) == ['id', 'name', 'age', 'salary', 'is_active']
         pg.drop_table(schema_nm, tb_nm)
 
-    def test_rename_column(self, pg: PGDF):
+    def test_rename_column(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         cols = [
@@ -237,7 +237,7 @@ class TestPGColumn:
         pytest.raises(ProgrammingError, pg.rename_column, schema_nm, tb_nm, 'age_new', 'id')
         pg.drop_table(schema_nm, tb_nm)
 
-    def test_alter_column(self, pg: PGDF):
+    def test_alter_column(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         cols = [
@@ -253,7 +253,7 @@ class TestPGColumn:
         assert pg.get_column(schema_nm, tb_nm, 'age').type.length == 100
         pg.drop_table(schema_nm, tb_nm)
 
-    def test_drop_column(self, pg: PGDF):
+    def test_drop_column(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         cols = [
@@ -268,7 +268,7 @@ class TestPGColumn:
         assert pg.get_table(schema_nm, tb_nm).c.keys() == ['id', 'name', 'salary', 'is_active']
         pg.drop_table(schema_nm, tb_nm)
 
-    def test_drop_columns(self, pg: PGDF):
+    def test_drop_columns(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         cols = [
@@ -284,8 +284,8 @@ class TestPGColumn:
         pg.drop_table(schema_nm, tb_nm)
 
 
-class TestPGIndex:
-    def test_create_index(self, pg: PGDF):
+class TestPgsqlIndex:
+    def test_create_index(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         cols = [
@@ -300,7 +300,7 @@ class TestPGIndex:
         assert 'idx_name' in pg.get_indexes(schema_nm, tb_nm)
         pg.drop_table(schema_nm, tb_nm)
 
-    def test_get_index(self, pg: PGDF):
+    def test_get_index(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         cols = [
@@ -315,7 +315,7 @@ class TestPGIndex:
         assert pg.get_index(schema_nm, tb_nm, idx_nm='idx_name').name == 'idx_name'
         pg.drop_table(schema_nm, tb_nm)
 
-    def test_get_indexes(self, pg: PGDF):
+    def test_get_indexes(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         cols = [
@@ -330,7 +330,7 @@ class TestPGIndex:
         assert 'idx_name' in pg.get_indexes(schema_nm, tb_nm)
         pg.drop_table(schema_nm, tb_nm)
 
-    def test_drop_index(self, pg: PGDF):
+    def test_drop_index(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         cols = [
@@ -346,8 +346,8 @@ class TestPGIndex:
         pg.drop_table(schema_nm, tb_nm)
 
 
-class TestPGRow:
-    def test_insert_row(self, pg: PGDF):
+class TestPgsqlRow:
+    def test_insert_row(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         cols = [
@@ -380,7 +380,7 @@ class TestPGRow:
         assert pg._execute_sql(tb.select()).fetchall() == [(1, 'Alice', 25, 6000.0, False)]
         pg.drop_table(schema_nm, tb_nm)
 
-    def test_insert_rows(self, pg: PGDF):
+    def test_insert_rows(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         cols = [
@@ -422,7 +422,7 @@ class TestPGRow:
         assert pg._execute_sql(tb.select()).fetchall() == [(1, 'Alice', 25, 6000.0, False), (2, 'Bob', 30, 5000.0, True)]
         pg.drop_table(schema_nm, tb_nm)
 
-    def test_select_rows(self, pg: PGDF):
+    def test_select_rows(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         cols = [
@@ -482,7 +482,7 @@ class TestPGRow:
         ) == (['name', 'age'], [('Alice', 25)])
         pg.drop_table(schema_nm, tb_nm)
 
-    def test_update_rows(self, pg: PGDF):
+    def test_update_rows(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         cols = [
@@ -530,7 +530,7 @@ class TestPGRow:
         )
         pg.drop_table(schema_nm, tb_nm)
 
-    def test_delete_rows(self, pg: PGDF):
+    def test_delete_rows(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         cols = [
@@ -556,7 +556,7 @@ class TestPGRow:
         )
         pg.drop_table(schema_nm, tb_nm)
 
-    def test_execute_sql(self, pg: PGDF):
+    def test_execute_sql(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         pg.create_table(
             schema_nm=schema_nm, tb_nm='test_table_2', cols=[Column('id', Integer, primary_key=True), Column('name', String)]
@@ -586,8 +586,8 @@ class TestPGRow:
         pg.drop_table(schema_nm, 'test_table_3')
 
 
-class TestPGDF:
-    def test_df_create_table(self, pg: PGDF):
+class TestPgsqlDF:
+    def test_df_create_table(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         df = pd.DataFrame({'id': [1, 2, 3], 'name': ['Alice', 'Bob', 'Charlie']})
@@ -596,7 +596,7 @@ class TestPGDF:
         assert list(pg.get_columns(schema_nm=schema_nm, tb_nm='test_table_2').keys()) == ['id', 'name']
         pg.drop_table(schema_nm, tb_nm)
 
-    def test_df_add_columns(self, pg: PGDF):
+    def test_df_add_columns(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         df = pd.DataFrame({'id': [1, 2, 3], 'name': ['Alice', 'Bob', 'Charlie']})
@@ -607,7 +607,7 @@ class TestPGDF:
         assert list(pg.get_columns(schema_nm=schema_nm, tb_nm='test_table_2').keys()) == ['id', 'name', 'age']
         pg.drop_table(schema_nm, tb_nm)
 
-    def test_df_alter_columns(self, pg: PGDF):
+    def test_df_alter_columns(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         df = pd.DataFrame.from_records(
@@ -627,7 +627,7 @@ class TestPGDF:
         assert isinstance(pg.get_column(schema_nm=schema_nm, tb_nm='test_table_2', col_nm='salary').type, Float)
         pg.drop_table(schema_nm, tb_nm)
 
-    def test_df_copy_rows(self, pg: PGDF):
+    def test_df_copy_rows(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         df = pd.DataFrame({'id': [1, 2, 3], 'name': ['Alice', 'Bob', 'Charlie']})
@@ -644,7 +644,7 @@ class TestPGDF:
         pytest.raises(UniqueViolation, pg.df_copy_rows, df=df3, schema_nm=schema_nm, tb_nm=tb_nm)
         pg.drop_table(schema_nm, tb_nm)
 
-    def test_df_insert_rows(self, pg: PGDF):
+    def test_df_insert_rows(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         df = pd.DataFrame({'id': [1, 2, 3], 'name': ['Alice', 'Bob', 'Charlie']})
@@ -659,7 +659,7 @@ class TestPGDF:
         )
         pg.drop_table(schema_nm, tb_nm)
 
-    def test_df_upsert_table(self, pg: PGDF):
+    def test_df_upsert_table(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         df = pd.DataFrame({'id': [1, 2, 3], 'name': ['Alice', 'Bob', 'Charlie'], 'notes': [None, None, None]})
@@ -675,9 +675,15 @@ class TestPGDF:
             ['id', 'name', 'notes'],
             [(1, 'Alice', None), (2, 'Bob', None), (3, 'Dave', 'A'), (5, 'Eve', 'B'), (6, 'Frank', 'C')],
         )
+        df3 = pd.DataFrame({'id': [1, 2, 3], 'name': ['Alice', 'Bob', 'Charlie'], 'notes': [['A', 'B'], ['B'], []]})
+        pg.df_upsert_table(df=df3, schema_nm=schema_nm, tb_nm=tb_nm, primary_col_nm='id')
+        assert pg.select_rows(schema_nm=schema_nm, tb_nm=tb_nm, order=Order('id')) == (
+            ['id', 'name', 'notes'],
+            [(1, 'Alice', ['A', 'B']), (2, 'Bob', ['B']), (3, 'Charlie', []), (5, 'Eve', 'B'), (6, 'Frank', 'C')],
+        )
         pg.drop_table(schema_nm, tb_nm)
 
-    def test_df_select_rows(self, pg: PGDF):
+    def test_df_select_rows(self, pg: PgsqlDF):
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         df = pd.DataFrame({'id': [1, 2, 3], 'name': ['Alice', 'Bob', 'Charlie']})

@@ -559,6 +559,16 @@ class TestSqliteDF:
             ],
         )
 
+    def test_df_upsert_table(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = SqliteDF(db_path=db_path)
+        df = pd.DataFrame({'id': [1, 2, 3], 'name': ['Alice', 'Bob', 'Charlie'], 'notes': [['A', 'B'], ['B'], []]})
+        db.df_upsert_table(df=df, tb_nm='test_table', primary_col_nm='id')
+        assert db.select_rows(tb_nm='test_table', order=Order('id')) == (
+            ['id', 'name', 'notes'],
+            [(1, 'Alice', '["A","B"]'), (2, 'Bob', '["B"]'), (3, 'Charlie', '[]')],
+        )
+
     def test_df_select_rows(self, tmp_dir):
         db_path = Path(tmp_dir, 'data.db')
         db = SqliteDF(db_path=db_path)

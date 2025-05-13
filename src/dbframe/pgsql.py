@@ -8,6 +8,7 @@ import psycopg2
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from sqlalchemy import (
+    JSON,
     Column,
     Constraint,
     CursorResult,
@@ -31,7 +32,7 @@ from .dtype import df_to_rows, df_to_schema_items, object_to_sql_dtype
 from .validator import NameValidator
 
 
-class PG:
+class Pgsql:
     def __init__(
         self,
         host: str = None,
@@ -89,7 +90,9 @@ class PG:
     # Database CRUD
     def create_database(self, dbname: str) -> str:
         dbname = NameValidator.dbname(dbname)
-        pg = PG(host=self.host, port=self.port, user=self.user, password=self.password, dbname='postgres', verbose=self.verbose)
+        pg = Pgsql(
+            host=self.host, port=self.port, user=self.user, password=self.password, dbname='postgres', verbose=self.verbose
+        )
         if pg.get_database(dbname=dbname) is not None:
             raise ValueError(f'Database {dbname} already exists.')
         stmt = text(f"CREATE DATABASE {dbname} LOCALE 'en_US.utf8' ENCODING UTF8 TEMPLATE template0;")
@@ -99,7 +102,9 @@ class PG:
 
     def get_database(self, dbname: str) -> str | None:
         dbname = NameValidator.dbname(dbname)
-        pg = PG(host=self.host, port=self.port, user=self.user, password=self.password, dbname='postgres', verbose=self.verbose)
+        pg = Pgsql(
+            host=self.host, port=self.port, user=self.user, password=self.password, dbname='postgres', verbose=self.verbose
+        )
         # _, rows = pg.select_rows(schema_nm='pg_catalog', tb_nm='pg_database', col_nms=['datname'], where=Where('datname', '==', dbname))
         # if len(rows) == 0:
         #     return
@@ -112,7 +117,9 @@ class PG:
         return row[0]
 
     def get_databases(self) -> Sequence[str] | None:
-        pg = PG(host=self.host, port=self.port, user=self.user, password=self.password, dbname='postgres', verbose=self.verbose)
+        pg = Pgsql(
+            host=self.host, port=self.port, user=self.user, password=self.password, dbname='postgres', verbose=self.verbose
+        )
         stmt = text('SELECT datname FROM pg_catalog.pg_database;')
         cur = pg._execute_sql(stmt)
         rows = cur.fetchall()
@@ -124,7 +131,9 @@ class PG:
             raise ValueError(f'Database {dbname} does not exist.')
         if dbname == self.dbname:
             raise ValueError(f'Cannot drop the current database {dbname}.')
-        pg = PG(host=self.host, port=self.port, user=self.user, password=self.password, dbname='postgres', verbose=self.verbose)
+        pg = Pgsql(
+            host=self.host, port=self.port, user=self.user, password=self.password, dbname='postgres', verbose=self.verbose
+        )
         stmt = text(f'DROP DATABASE {dbname};')
         pg._execute_sql(stmt)
         self._verbose_print(f'Dropped database {dbname}.')
@@ -311,7 +320,18 @@ class PG:
         with self.engine.connect() as conn:
             ctx = MigrationContext.configure(conn)
             op = Operations(ctx)
-            op.alter_column(tb_nm, col_nm, new_column_name=new_col_nm, type_=sql_dtype, schema=schema_nm, **kwargs)
+            if isinstance(sql_dtype, JSON):
+                op.alter_column(
+                    tb_nm,
+                    col_nm,
+                    new_column_name=new_col_nm,
+                    type_=sql_dtype,
+                    schema=schema_nm,
+                    postgresql_using=f'to_jsonb({col_nm}::text)::json',
+                    **kwargs,
+                )
+            else:
+                op.alter_column(tb_nm, col_nm, new_column_name=new_col_nm, type_=sql_dtype, schema=schema_nm, **kwargs)
             self._verbose_print(f'Column {col_nm} altered to {new_col_nm} in table {schema_nm}.{tb_nm}.')
         return self.get_column(schema_nm=schema_nm, tb_nm=tb_nm, col_nm=new_col_nm or col_nm, **kwargs)
 
@@ -554,7 +574,7 @@ class PG:
             return cur
 
 
-class PGDF(PG):
+class PgsqlDF(Pgsql):
     def __init__(
         self,
         host: str = None,

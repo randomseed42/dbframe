@@ -189,13 +189,16 @@ def object_to_sql_dtype(obj: Any, dialect: Literal['sqlite', 'postgresql'] = Non
     return sql_dtype
 
 
-def _df_convert_dtypes(df: pd.DataFrame) -> pd.DataFrame:
+def _df_convert_dtypes(df: pd.DataFrame, dialect: Literal['sqlite', 'postgresql'] = None) -> pd.DataFrame:
     byte_col_nms = []
     for col_nm in df.columns:
         try:
             df[col_nm] = df[col_nm].convert_dtypes()
             df[col_nm] = df[col_nm].where(pd.notnull(df[col_nm]), None)
             df[col_nm] = df[col_nm].replace('', None)
+            if dialect == 'sqlite':
+                if isinstance(df[col_nm].dropna().sample(1).iloc[0], (dict, list, tuple, set)):
+                    df[col_nm] = df[col_nm].apply(orjsonic.dumps, return_str=True)
         except UnicodeDecodeError:
             byte_col_nms.append(col_nm)
     return byte_col_nms, df
@@ -274,7 +277,7 @@ def df_to_schema_items(
     unique_col_nms: Sequence[str | Sequence[str]] = None,
     dialect: Literal['sqlite', 'postgresql'] = None,
 ) -> Sequence[Column | Constraint | Index | UniqueConstraint]:
-    _, df = _df_convert_dtypes(df)
+    _, df = _df_convert_dtypes(df, dialect=dialect)
     tb_nm = NameValidator.table(tb_nm)
     schema_items = []
 
@@ -305,9 +308,9 @@ def df_to_schema_items(
     return schema_items
 
 
-def df_to_rows(df: pd.DataFrame) -> Sequence[dict]:
+def df_to_rows(df: pd.DataFrame, dialect: Literal['sqlite', 'postgresql'] = None) -> Sequence[dict]:
     df.columns = map(NameValidator.column, df.columns)
-    byte_col_nms, df = _df_convert_dtypes(df)
+    byte_col_nms, df = _df_convert_dtypes(df, dialect=dialect)
 
     def decode_bytes(row: dict) -> dict:
         for col_nm in byte_col_nms:
