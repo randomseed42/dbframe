@@ -196,9 +196,14 @@ def _df_convert_dtypes(df: pd.DataFrame, dialect: Literal['sqlite', 'postgresql'
             df[col_nm] = df[col_nm].convert_dtypes()
             df[col_nm] = df[col_nm].where(pd.notnull(df[col_nm]), None)
             df[col_nm] = df[col_nm].replace('', None)
-            if dialect == 'sqlite':
-                if isinstance(df[col_nm].dropna().sample(1).iloc[0], (dict, list, tuple, set)):
-                    df[col_nm] = df[col_nm].apply(orjsonic.dumps, return_str=True)
+            if dialect != 'sqlite':
+                continue
+            if df[col_nm].dtype.type is not np.object_:
+                continue
+            if df[col_nm].dropna().empty:
+                continue
+            if isinstance(df[col_nm].dropna().sample(1).iloc[0], (dict, list, tuple, set)):
+                df[col_nm] = df[col_nm].apply(orjsonic.dumps, return_str=True)
         except UnicodeDecodeError:
             byte_col_nms.append(col_nm)
     return byte_col_nms, df
