@@ -483,7 +483,7 @@ class SqliteDF(Sqlite):
         tb_nm = NameValidator.table(tb_nm)
         if add_cols:
             self.df_add_columns(df=df, tb_nm=tb_nm, **kwargs)
-        rows = df_to_rows(df=df)
+        rows = df_to_rows(df=df, dialect='sqlite')
         rowcount = self.insert_rows(tb_nm=tb_nm, rows=rows, on_conflict=on_conflict, row_key_validate=False, **kwargs)
         return rowcount
 
