@@ -20,7 +20,7 @@ def pg():
     DEFAULT_PG_CONN = {**PG_CONN, 'dbname': 'postgres'}
     DEFAULT_PG = PgsqlDF(**DEFAULT_PG_CONN)
     DEFAULT_PG.create_database('test_db')
-    _pg = PgsqlDF(**PG_CONN, verbose=False)
+    _pg = PgsqlDF(**PG_CONN, verbose=True)
     _pg.create_schema('test_schema')
     _pg.create_table('test_schema', 'test_table', [Column('id', Integer, primary_key=True), Column('name', String)])
     yield _pg
@@ -251,6 +251,7 @@ class TestPgsqlColumn:
         pg.alter_column(schema_nm, tb_nm, 'age', sql_dtype=String(100))
         assert list(pg.get_columns(schema_nm, tb_nm)) == ['id', 'name', 'age', 'salary', 'is_active']
         assert pg.get_column(schema_nm, tb_nm, 'age').type.length == 100
+        pg.alter_column(schema_nm, tb_nm, 'name', sql_dtype=Integer())
         pg.drop_table(schema_nm, tb_nm)
 
     def test_drop_column(self, pg: PgsqlDF):

@@ -23,6 +23,7 @@ from sqlalchemy import (
     select,
     text,
 )
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.sql.sqltypes import TypeEngine
 from sqlalchemy.util import FacadeDict
@@ -320,19 +321,22 @@ class Pgsql:
         with self.engine.connect() as conn:
             ctx = MigrationContext.configure(conn)
             op = Operations(ctx)
-            if isinstance(sql_dtype, JSON):
-                op.alter_column(
-                    tb_nm,
-                    col_nm,
-                    new_column_name=new_col_nm,
-                    type_=sql_dtype,
-                    schema=schema_nm,
-                    postgresql_using=f'to_jsonb({col_nm}::text)::json',
-                    **kwargs,
-                )
-            else:
-                op.alter_column(tb_nm, col_nm, new_column_name=new_col_nm, type_=sql_dtype, schema=schema_nm, **kwargs)
-            self._verbose_print(f'Column {col_nm} altered to {new_col_nm} in table {schema_nm}.{tb_nm}.')
+            try:
+                if isinstance(sql_dtype, JSON):
+                    op.alter_column(
+                        tb_nm,
+                        col_nm,
+                        new_column_name=new_col_nm,
+                        type_=sql_dtype,
+                        schema=schema_nm,
+                        postgresql_using=f'to_jsonb({col_nm}::text)::json',
+                        **kwargs,
+                    )
+                else:
+                    op.alter_column(tb_nm, col_nm, new_column_name=new_col_nm, type_=sql_dtype, schema=schema_nm, **kwargs)
+                self._verbose_print(f'Column {col_nm} altered to {new_col_nm if new_col_nm else col_nm} type {sql_dtype} in table {schema_nm}.{tb_nm}.')
+            except ProgrammingError:
+                self._verbose_print(f'Column {col_nm} cannot be altered to {new_col_nm if new_col_nm else col_nm} type {sql_dtype} in table {schema_nm}.{tb_nm}.')
         return self.get_column(schema_nm=schema_nm, tb_nm=tb_nm, col_nm=new_col_nm or col_nm, **kwargs)
 
     def drop_column(self, schema_nm: str, tb_nm: str, col_nm: str, **kwargs) -> str:
