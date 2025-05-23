@@ -330,7 +330,7 @@ class TestDFtoSchema:
             tb_nm='test_table',
             primary_col_nm='a',
             primary_col_autoinc=True,
-            not_null_col_nms=['b'],
+            notnull_col_nms=['b'],
             index_col_nms=['d', ['b', 'c']],
             unique_col_nms=['b', ['d', 'c']],
         )

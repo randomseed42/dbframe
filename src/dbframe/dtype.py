@@ -277,7 +277,7 @@ def df_to_schema_items(
     tb_nm: str,
     primary_col_nm: str = None,
     primary_col_autoinc: Literal['auto', True, False] = 'auto',
-    not_null_col_nms: Sequence[str] = None,
+    notnull_col_nms: Sequence[str] = None,
     index_col_nms: Sequence[str | Sequence[str]] = None,
     unique_col_nms: Sequence[str | Sequence[str]] = None,
     dialect: Literal['sqlite', 'postgresql'] = None,
@@ -289,8 +289,8 @@ def df_to_schema_items(
     sql_col = _df_to_primary_col(df=df, primary_col_nm=primary_col_nm, primary_col_autoinc=primary_col_autoinc, dialect=dialect)
     schema_items.append(sql_col)
 
-    if not_null_col_nms is None:
-        not_null_col_nms = []
+    if notnull_col_nms is None:
+        notnull_col_nms = []
     if index_col_nms is None:
         index_col_nms = []
     if unique_col_nms is None:
@@ -300,7 +300,7 @@ def df_to_schema_items(
         if col_nm == primary_col_nm:
             continue
         _col_nm = NameValidator.column(col_nm)
-        nullable = col_nm not in not_null_col_nms and _col_nm not in not_null_col_nms
+        nullable = col_nm not in notnull_col_nms and _col_nm not in notnull_col_nms
         sql_dtype = object_to_sql_dtype(df[col_nm], dialect=dialect)
         sql_col = Column(_col_nm, sql_dtype, nullable=nullable)
         schema_items.append(sql_col)
