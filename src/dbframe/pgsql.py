@@ -480,14 +480,25 @@ class Pgsql:
         with self.engine.connect() as conn:
             if on_conflict in ('update', 'replace', 'upsert'):
                 stmt = insert(tb).values(rows)
-                stmt = stmt.on_conflict_do_update(
-                    index_elements=tb.primary_key.columns,
-                    set_={
-                        col_nm: getattr(stmt.excluded, col_nm)
-                        for col_nm in tb.columns.keys()
-                        if col_nm not in tb.primary_key.columns
-                    },
-                )
+                constraints_cols = []
+                constraints_col_nms = []
+                if tb.primary_key is not None:
+                    constraints_cols.extend(tb.primary_key.columns)
+                    constraints_col_nms.extend(tb.primary_key.columns.keys())
+                if len(tb.constraints) > 0:
+                    for constraint in tb.constraints:
+                        if isinstance(constraint, UniqueConstraint):
+                            constraints_cols.extend(constraint.columns)
+                            constraints_col_nms.extend(constraint.columns.keys())
+                if len(constraints_cols) > 0:
+                    stmt = stmt.on_conflict_do_update(
+                        index_elements=constraints_cols, 
+                        set_={
+                            col_nm: getattr(stmt.excluded, col_nm)
+                            for col_nm in tb.columns.keys()
+                            if col_nm not in constraints_col_nms
+                        },
+                    )
                 cur = conn.execute(stmt)
                 self._verbose_print(f'Inserted or replaced rows into table {schema_nm}.{tb_nm}.')
             elif on_conflict in ('do_nothing', 'ignore', 'skip'):
