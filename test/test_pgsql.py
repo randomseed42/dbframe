@@ -632,7 +632,7 @@ class TestPgsqlDF:
         schema_nm = 'test_schema'
         tb_nm = 'Test_Table_2'
         df = pd.DataFrame({'id': [1, 2, 3], 'name': ['Alice', 'Bob', 'Charlie']})
-        pg.df_create_table(df=df, schema_nm=schema_nm, tb_nm=tb_nm)
+        pg.df_create_table(df=df, schema_nm=schema_nm, tb_nm=tb_nm, primary_col_nm='index')
         res = pg.df_copy_rows(df=df, schema_nm=schema_nm, tb_nm=tb_nm)
         assert res == 3
         df2 = pd.DataFrame({'name': ['Dave', 'Eve', 'Frank']})
@@ -691,4 +691,31 @@ class TestPgsqlDF:
         pg.df_upsert_table(df=df, schema_nm=schema_nm, tb_nm=tb_nm, primary_col_nm='id')
         res = pg.df_select_rows(schema_nm=schema_nm, tb_nm=tb_nm)
         assert res.equals(df)
+        pg.drop_table(schema_nm, tb_nm)
+
+    def test_df_primary_key(self, pg: PgsqlDF):
+        schema_nm = 'test_schema'
+
+        tb_nm = 'Test_Table_2'
+        df = pd.DataFrame({'name': ['Alice', 'Bob', 'Charlie'], 'age': [17, 18, 19]})
+        df2 = pd.DataFrame({'name': ['Alice', 'Bob', 'Charlie'], 'age': [18, 19, 20]})
+        pg.df_create_table(
+            df=df, schema_nm=schema_nm, tb_nm=tb_nm, primary_col_nm='index', unique_col_nms=['name'], notnull_col_nms=['name']
+        )
+        pg.df_insert_rows(df=df, schema_nm=schema_nm, tb_nm=tb_nm, on_conflict='update')
+        pg.df_insert_rows(df=df2, schema_nm=schema_nm, tb_nm=tb_nm, on_conflict='update')
+        pkey = pg.get_table(schema_nm=schema_nm, tb_nm=tb_nm).primary_key
+        assert pkey.c[0].name == 'uid'
+        pg.drop_table(schema_nm, tb_nm)
+
+        tb_nm = 'Test_Table_3'
+        df = pd.DataFrame({'name': ['Alice', 'Bob', 'Charlie'], 'age': [17, 18, 19]})
+        df2 = pd.DataFrame({'name': ['Alice', 'Bob', 'Charlie'], 'age': [18, 19, 20]})
+        pg.df_create_table(
+            df=df, schema_nm=schema_nm, tb_nm=tb_nm, primary_col_nm=None, unique_col_nms=['name'], notnull_col_nms=['name']
+        )
+        pg.df_insert_rows(df=df, schema_nm=schema_nm, tb_nm=tb_nm, on_conflict='update')
+        pg.df_insert_rows(df=df2, schema_nm=schema_nm, tb_nm=tb_nm, on_conflict='update')
+        pkey = pg.get_table(schema_nm=schema_nm, tb_nm=tb_nm).primary_key
+        assert pkey.name is None
         pg.drop_table(schema_nm, tb_nm)
