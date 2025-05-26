@@ -439,13 +439,12 @@ class TestSqliteRow:
             == 0
         )
         assert db.select_rows(tb_nm='test_table') == (['id', 'name'], [(1, 'Alice'), (2, 'Bob'), (3, 'Charlie'), (4, 'Dave')])
-        assert (
-            db.insert_rows(
-                tb_nm='test_table', rows=[{'id': 3, 'name': 'Carl'}, {'id': 4, 'name': 'Dave'}], on_conflict='upsert'
-            )
-            == 2
+        res = db.insert_rows(
+            tb_nm='test_table', rows=[{'id': 3, 'name': 'Carl'}, {'id': 4, 'name': 'Dave'}], on_conflict='upsert'
         )
-        assert db.select_rows(tb_nm='test_table') == (['id', 'name'], [(1, 'Alice'), (2, 'Bob'), (3, 'Carl'), (4, 'Dave')])
+        assert res == 2
+        res = db.select_rows(tb_nm='test_table')
+        assert res == (['id', 'name'], [(1, 'Alice'), (2, 'Bob'), (3, 'Carl'), (4, 'Dave')])
 
     def test_select_rows(self, tmp_dir):
         db_path = Path(tmp_dir, 'data.db')
@@ -582,3 +581,27 @@ class TestSqliteDF:
         )
         pytest.raises(ValueError, db.df_select_rows, tb_nm='test_table', col_nms=[])
         pytest.raises(ValueError, db.df_select_rows, tb_nm='test_table', col_nms=['name', 'age'])
+
+    def test_df_primary_key(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = SqliteDF(db_path=db_path)
+
+        tb_nm = 'Test_Table_2'
+        df = pd.DataFrame({'name': ['Alice', 'Bob', 'Charlie'], 'age': [17, 18, 19]})
+        df2 = pd.DataFrame({'name': ['Alice', 'Bob', 'Charlie'], 'age': [18, 19, 20]})
+        db.df_create_table(df=df, tb_nm=tb_nm, primary_col_nm='index', unique_col_nms=['name'], notnull_col_nms=['name'])
+        db.df_insert_rows(df=df, tb_nm=tb_nm, on_conflict='update')
+        db.df_insert_rows(df=df2, tb_nm=tb_nm, on_conflict='update')
+        pkey = db.get_table(tb_nm=tb_nm).primary_key
+        assert pkey.c[0].name == 'uid'
+        db.drop_table(tb_nm)
+
+        tb_nm = 'Test_Table_3'
+        df = pd.DataFrame({'name': ['Alice', 'Bob', 'Charlie'], 'age': [17, 18, 19]})
+        df2 = pd.DataFrame({'name': ['Alice', 'Bob', 'Charlie'], 'age': [18, 19, 20]})
+        db.df_create_table(df=df, tb_nm=tb_nm, primary_col_nm=None, unique_col_nms=['name'], notnull_col_nms=['name'])
+        db.df_insert_rows(df=df, tb_nm=tb_nm, on_conflict='update')
+        db.df_insert_rows(df=df2, tb_nm=tb_nm, on_conflict='update')
+        pkey = db.get_table(tb_nm=tb_nm).primary_key
+        assert pkey.name is None
+        db.drop_table(tb_nm)

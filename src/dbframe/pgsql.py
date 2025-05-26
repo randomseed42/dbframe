@@ -14,6 +14,7 @@ from sqlalchemy import (
     CursorResult,
     Index,
     MetaData,
+    PrimaryKeyConstraint,
     Row,
     Table,
     TextClause,
@@ -23,8 +24,8 @@ from sqlalchemy import (
     select,
     text,
 )
-from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.sql.sqltypes import TypeEngine
 from sqlalchemy.util import FacadeDict
 
@@ -268,14 +269,14 @@ class Pgsql:
                 col_nm = NameValidator.column(col.name)
                 col.name = col_nm
                 if col_nm in current_cols or col_nm in new_col_nms:
-                    self._verbose_print(f'Column {col_nm} already exists in table {schema_nm}.{tb_nm}.')
                     continue
                 if col.primary_key:
                     self._verbose_print(f'Column {col_nm} is primary key and cannot be added in table {schema_nm}.{tb_nm}.')
                     continue
                 op.add_column(tb_nm, col, schema=schema_nm, **kwargs)
                 new_col_nms.append(col_nm)
-            self._verbose_print(f'Columns {new_col_nms} added to table {schema_nm}.{tb_nm}.')
+            if new_col_nms:
+                self._verbose_print(f'Columns {new_col_nms} added to table {schema_nm}.{tb_nm}.')
             return new_col_nms
 
     def get_column(self, schema_nm: str, tb_nm: str, col_nm: str, **kwargs) -> Column:
@@ -334,9 +335,13 @@ class Pgsql:
                     )
                 else:
                     op.alter_column(tb_nm, col_nm, new_column_name=new_col_nm, type_=sql_dtype, schema=schema_nm, **kwargs)
-                self._verbose_print(f'Column {col_nm} altered to {new_col_nm if new_col_nm else col_nm} type {sql_dtype} in table {schema_nm}.{tb_nm}.')
+                self._verbose_print(
+                    f'Column {col_nm} altered to {new_col_nm if new_col_nm else col_nm} type {sql_dtype} in table {schema_nm}.{tb_nm}.'
+                )
             except ProgrammingError:
-                self._verbose_print(f'Column {col_nm} cannot be altered to {new_col_nm if new_col_nm else col_nm} type {sql_dtype} in table {schema_nm}.{tb_nm}.')
+                self._verbose_print(
+                    f'Column {col_nm} cannot be altered to {new_col_nm if new_col_nm else col_nm} type {sql_dtype} in table {schema_nm}.{tb_nm}.'
+                )
         return self.get_column(schema_nm=schema_nm, tb_nm=tb_nm, col_nm=new_col_nm or col_nm, **kwargs)
 
     def drop_column(self, schema_nm: str, tb_nm: str, col_nm: str, **kwargs) -> str:
@@ -480,23 +485,22 @@ class Pgsql:
         with self.engine.connect() as conn:
             if on_conflict in ('update', 'replace', 'upsert'):
                 stmt = insert(tb).values(rows)
-                constraints_cols = []
-                constraints_col_nms = []
-                if tb.primary_key is not None:
-                    constraints_cols.extend(tb.primary_key.columns)
-                    constraints_col_nms.extend(tb.primary_key.columns.keys())
+                uq_constraints_col_nms = []
+                pk_constraints_col_nms = []
                 if len(tb.constraints) > 0:
                     for constraint in tb.constraints:
                         if isinstance(constraint, UniqueConstraint):
-                            constraints_cols.extend(constraint.columns)
-                            constraints_col_nms.extend(constraint.columns.keys())
-                if len(constraints_cols) > 0:
+                            uq_constraints_col_nms.extend(constraint.columns.keys())
+                        elif isinstance(constraint, PrimaryKeyConstraint):
+                            pk_constraints_col_nms.extend(constraint.columns.keys())
+                constraints_col_nms = uq_constraints_col_nms or pk_constraints_col_nms
+                if len(constraints_col_nms) > 0:
                     stmt = stmt.on_conflict_do_update(
-                        index_elements=constraints_cols, 
+                        index_elements=constraints_col_nms,
                         set_={
                             col_nm: getattr(stmt.excluded, col_nm)
                             for col_nm in tb.columns.keys()
-                            if col_nm not in constraints_col_nms
+                            if col_nm not in constraints_col_nms and col_nm not in tb.primary_key.columns.keys()
                         },
                     )
                 cur = conn.execute(stmt)

@@ -11,6 +11,7 @@ from sqlalchemy import (
     CursorResult,
     Index,
     MetaData,
+    PrimaryKeyConstraint,
     Row,
     Table,
     TextClause,
@@ -185,14 +186,14 @@ class Sqlite:
                 col_nm = NameValidator.column(col.name)
                 col.name = col_nm
                 if col_nm in current_cols or col_nm in new_col_nms:
-                    self._verbose_print(f'Column {col_nm} already exists in table {tb_nm}.')
                     continue
                 if col.primary_key:
                     self._verbose_print(f'Column {col_nm} is primary key and cannot be added in table {tb_nm}.')
                     continue
                 op.add_column(tb_nm, col)
                 new_col_nms.append(col_nm)
-            self._verbose_print(f'Columns {new_col_nms} added to table {tb_nm}.')
+            if new_col_nms:
+                self._verbose_print(f'Columns {new_col_nms} added to table {tb_nm}.')
             return new_col_nms
 
     def get_column(self, tb_nm: str, col_nm: str, **kwargs) -> Column:
@@ -354,7 +355,26 @@ class Sqlite:
             rows = [{NameValidator.column(key): val for key, val in row.items()} for row in rows]
         with self.engine.connect() as conn:
             if on_conflict in ('update', 'replace', 'upsert'):
-                cur = conn.execute(tb.insert().prefix_with('OR REPLACE'), rows)
+                stmt = insert(tb).values(rows)
+                uq_constraints_col_nms = []
+                pk_constraints_col_nms = []
+                if len(tb.constraints) > 0:
+                    for constraint in tb.constraints:
+                        if isinstance(constraint, UniqueConstraint):
+                            uq_constraints_col_nms.extend(constraint.columns.keys())
+                        elif isinstance(constraint, PrimaryKeyConstraint):
+                            pk_constraints_col_nms.extend(constraint.columns.keys())
+                constraints_col_nms = uq_constraints_col_nms or pk_constraints_col_nms
+                if len(constraints_col_nms) > 0:
+                    stmt = stmt.on_conflict_do_update(
+                        index_elements=constraints_col_nms,
+                        set_={
+                            col_nm: getattr(stmt.excluded, col_nm)
+                            for col_nm in tb.columns.keys()
+                            if col_nm not in constraints_col_nms and col_nm not in tb.primary_key.columns.keys()
+                        },
+                    )
+                cur = conn.execute(stmt)
                 self._verbose_print(f'Inserted or replaced {len(rows)} rows into table {tb_nm}.')
             elif on_conflict == 'do_nothing':
                 cur = conn.execute(insert(tb).values(rows).on_conflict_do_nothing())

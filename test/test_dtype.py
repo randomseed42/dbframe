@@ -318,6 +318,8 @@ class TestDFtoSchema:
         df['c'] = df['c'].astype(pd.CategoricalDtype())
         df['d'] = pd.to_datetime(df['d'])
         schema_items = df_to_schema_items(df, tb_nm='test_table')
+        assert len(schema_items) == 4
+        schema_items = df_to_schema_items(df, tb_nm='test_table', primary_col_nm='index')
         assert len(schema_items) == 5
         schema_items = df_to_schema_items(df, tb_nm='test_table', primary_col_nm='a', primary_col_autoinc=True)
         assert len(schema_items) == 4

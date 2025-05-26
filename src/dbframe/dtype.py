@@ -214,8 +214,10 @@ def _df_to_primary_col(
     primary_col_nm: str = None,
     primary_col_autoinc: Literal['auto', True, False] = 'auto',
     dialect: Literal['sqlite', 'postgresql'] = None,
-) -> Column:
+) -> Column | None:
     if primary_col_nm is None:
+        return
+    if primary_col_nm == 'index':
         _primary_col_nm = 'uid'
         primary_col = df.index
     elif primary_col_nm not in df.columns:
@@ -287,7 +289,8 @@ def df_to_schema_items(
     schema_items = []
 
     sql_col = _df_to_primary_col(df=df, primary_col_nm=primary_col_nm, primary_col_autoinc=primary_col_autoinc, dialect=dialect)
-    schema_items.append(sql_col)
+    if sql_col is not None:
+        schema_items.append(sql_col)
 
     if notnull_col_nms is None:
         notnull_col_nms = []
