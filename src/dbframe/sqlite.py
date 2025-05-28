@@ -355,7 +355,7 @@ class Sqlite:
             rows = [{NameValidator.column(key): val for key, val in row.items()} for row in rows]
         with self.engine.connect() as conn:
             if on_conflict in ('update', 'replace', 'upsert'):
-                stmt = insert(tb).values(rows)
+                stmt = insert(tb)
                 uq_constraints_col_nms = []
                 pk_constraints_col_nms = []
                 if len(tb.constraints) > 0:
@@ -374,16 +374,19 @@ class Sqlite:
                             if col_nm not in constraints_col_nms and col_nm not in tb.primary_key.columns.keys()
                         },
                     )
-                cur = conn.execute(stmt)
+                cur = conn.execute(stmt, rows)
                 self._verbose_print(f'Inserted or replaced {len(rows)} rows into table {tb_nm}.')
             elif on_conflict == 'do_nothing':
-                cur = conn.execute(insert(tb).values(rows).on_conflict_do_nothing())
+                stmt = insert(tb).on_conflict_do_nothing()
+                cur = conn.execute(stmt, rows)
                 self._verbose_print(f'Inserted or do nothing {len(rows)} rows into table {tb_nm}.')
             elif on_conflict in ('ignore', 'skip'):
-                cur = conn.execute(tb.insert().prefix_with('OR IGNORE'), rows)
+                stmt = tb.insert().prefix_with('OR IGNORE')
+                cur = conn.execute(stmt, rows)
                 self._verbose_print(f'Inserted or ignored {len(rows)} rows into table {tb_nm}.')
             elif on_conflict is None:
-                cur = conn.execute(tb.insert(), rows)
+                stmt = tb.insert()
+                cur = conn.execute(stmt, rows)
                 self._verbose_print(f'Inserted rows into table {tb_nm}.')
             else:
                 raise ValueError(f'Invalid on_conflict value: {on_conflict}.')

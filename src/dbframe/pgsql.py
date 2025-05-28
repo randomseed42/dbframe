@@ -484,7 +484,7 @@ class Pgsql:
             rows = [{NameValidator.column(key): val for key, val in row.items()} for row in rows]
         with self.engine.connect() as conn:
             if on_conflict in ('update', 'replace', 'upsert'):
-                stmt = insert(tb).values(rows)
+                stmt = insert(tb)
                 uq_constraints_col_nms = []
                 pk_constraints_col_nms = []
                 if len(tb.constraints) > 0:
@@ -503,15 +503,15 @@ class Pgsql:
                             if col_nm not in constraints_col_nms and col_nm not in tb.primary_key.columns.keys()
                         },
                     )
-                cur = conn.execute(stmt)
+                cur = conn.execute(stmt, rows)
                 self._verbose_print(f'Inserted or replaced rows into table {schema_nm}.{tb_nm}.')
             elif on_conflict in ('do_nothing', 'ignore', 'skip'):
-                stmt = insert(tb).values(rows).on_conflict_do_nothing()
-                cur = conn.execute(stmt)
+                stmt = insert(tb).on_conflict_do_nothing()
+                cur = conn.execute(stmt, rows)
                 self._verbose_print(f'Inserted or ignored rows into table {schema_nm}.{tb_nm}.')
             elif on_conflict is None:
-                stmt = insert(tb).values(rows)
-                cur = conn.execute(stmt)
+                stmt = insert(tb)
+                cur = conn.execute(stmt, rows)
                 self._verbose_print(f'Inserted rows into table {schema_nm}.{tb_nm}.')
             else:
                 raise ValueError(f'Invalid on_conflict value: {on_conflict}.')
