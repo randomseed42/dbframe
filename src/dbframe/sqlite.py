@@ -30,12 +30,25 @@ from .validator import NameValidator
 
 
 class Sqlite:
-    def __init__(self, db_path: str | os.PathLike | pathlib.Path = None, verbose: bool = False, **kwargs):
+    def __init__(
+        self,
+        db_path: str | os.PathLike | pathlib.Path = None,
+        verbose: bool = False,
+        **kwargs,
+    ):
         self.db_path = db_path or ':memory:'
         self.verbose = verbose
         self.abs_db_path = self.get_abs_db_path(db_path=self.db_path)
         self.url = self.get_url()
-        self.engine = create_engine(self.url, isolation_level='AUTOCOMMIT', connect_args={'check_same_thread': False})
+        self.engine = create_engine(
+            self.url,
+            isolation_level='AUTOCOMMIT',
+            connect_args={'check_same_thread': False},
+            execution_options={
+                'executemany_mode': 'values',
+                'executemany_values_page_size': 1000,
+            },
+        )
         for k, v in kwargs.items():
             setattr(self, k, v)
 
@@ -381,11 +394,11 @@ class Sqlite:
                 cur = conn.execute(stmt, rows)
                 self._verbose_print(f'Inserted or do nothing {len(rows)} rows into table {tb_nm}.')
             elif on_conflict in ('ignore', 'skip'):
-                stmt = tb.insert().prefix_with('OR IGNORE')
+                stmt = insert(tb).prefix_with('OR IGNORE')
                 cur = conn.execute(stmt, rows)
                 self._verbose_print(f'Inserted or ignored {len(rows)} rows into table {tb_nm}.')
             elif on_conflict is None:
-                stmt = tb.insert()
+                stmt = insert(tb)
                 cur = conn.execute(stmt, rows)
                 self._verbose_print(f'Inserted rows into table {tb_nm}.')
             else:
