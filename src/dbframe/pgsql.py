@@ -197,7 +197,7 @@ class Pgsql:
         metadata = MetaData(schema=schema_nm)
         for col in cols:
             col.name = NameValidator.column(col.name)
-        tb = Table(tb_nm, metadata, *cols, **kwargs)
+        tb = Table(tb_nm, metadata, *cols)
         tb.create(bind=self.engine, checkfirst=False)
         self._verbose_print(f'Table {schema_nm}.{tb_nm} created.')
         return self.get_table(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
@@ -213,7 +213,7 @@ class Pgsql:
         if not self.table_exists(schema_nm=schema_nm, tb_nm=tb_nm):
             raise ValueError(f'Table {schema_nm}.{tb_nm} does not exist.')
         metadata = MetaData(schema=schema_nm)
-        tb = Table(tb_nm, metadata, autoload_with=self.engine, **kwargs)
+        tb = Table(tb_nm, metadata, autoload_with=self.engine)
         return tb
 
     def get_tables(self, schema_nm: str, views: bool = False, **kwargs) -> dict[str, Table] | FacadeDict | None:
