@@ -56,7 +56,10 @@ class Pgsql:
         self.engine = create_engine(
             self.url,
             isolation_level='AUTOCOMMIT',
-            executemany_mode='values_plus_batch',
+            execution_options={
+                'executemany_mode': 'values',
+                'executemany_values_page_size': 1000,
+            },
             **kwargs,
         )
         for k, v in kwargs.items():
