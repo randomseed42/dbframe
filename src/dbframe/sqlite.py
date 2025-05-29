@@ -128,7 +128,7 @@ class Sqlite:
         for col in cols:
             col.name = NameValidator.column(col.name)
         metadata = MetaData()
-        tb = Table(tb_nm, metadata, *cols, sqlite_autoincrement=sqlite_autoincrement, **kwargs)
+        tb = Table(tb_nm, metadata, *cols, sqlite_autoincrement=sqlite_autoincrement)
         tb.create(bind=self.engine, checkfirst=False)
         self._verbose_print(f'Table {tb_nm} created.')
         return self.get_table(tb_nm=tb_nm, **kwargs)
@@ -142,7 +142,7 @@ class Sqlite:
         if not self.table_exists(tb_nm=tb_nm):
             raise ValueError(f'Table {tb_nm} does not exist.')
         metadata = MetaData()
-        tb = Table(tb_nm, metadata, autoload_with=self.engine, **kwargs)
+        tb = Table(tb_nm, metadata, autoload_with=self.engine)
         return tb
 
     def get_tables(self, views: bool = False, **kwargs) -> dict[str, Table] | FacadeDict | None:
