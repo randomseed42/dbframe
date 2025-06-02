@@ -80,6 +80,13 @@ class Sqlite:
         with self.engine.connect():
             return True
 
+    def set_wal_journal_mode(self):
+        with self.engine.connect() as conn:
+            with conn.begin():
+                mode = conn.execute(text('PRAGMA journal_mode;')).scalar()
+                if mode != 'wal':
+                    conn.execute(text('PRAGMA journal_mode = WAL;'))
+
     def dispose(self):
         self.engine.dispose()
 
@@ -91,6 +98,9 @@ class Sqlite:
         if os.path.exists(abs_db_path) and os.path.isfile(abs_db_path):
             raise FileExistsError(f'Database already exists at {abs_db_path}.')
         Sqlite(db_path=abs_db_path, **kwargs).validate_conn()
+        db = Sqlite(db_path=abs_db_path, **kwargs)
+        db.validate_conn()
+        db.set_wal_journal_mode()
         self._verbose_print(f'Created database at {abs_db_path}.')
         return abs_db_path
 
@@ -341,14 +351,16 @@ class Sqlite:
             row = {NameValidator.column(key): val for key, val in row.items()}
         with self.engine.connect() as conn:
             if on_conflict in ('update', 'replace', 'upsert'):
-                cur = conn.execute(tb.insert().prefix_with('OR REPLACE').values(**row))
+                with conn.begin():
+                    cur = conn.execute(tb.insert().prefix_with('OR REPLACE').values(**row))
                 self._verbose_print(f'Inserted or replaced row into table {tb_nm}.')
             elif on_conflict in ('do_nothing', 'ignore', 'skip'):
-                # cur = conn.execute(tb.insert().prefix_with('OR IGNORE').values(**row))
-                cur = conn.execute(insert(tb).values(**row).on_conflict_do_nothing())
+                with conn.begin():
+                    cur = conn.execute(insert(tb).values(**row).on_conflict_do_nothing())
                 self._verbose_print(f'Inserted or ignored row into table {tb_nm}.')
             elif on_conflict is None:
-                cur = conn.execute(tb.insert(), row)
+                with conn.begin():
+                    cur = conn.execute(tb.insert(), row)
                 self._verbose_print(f'Inserted row into table {tb_nm}.')
             else:
                 raise ValueError(f'Invalid on_conflict value: {on_conflict}.')
@@ -387,19 +399,29 @@ class Sqlite:
                             if col_nm not in constraints_col_nms and col_nm not in tb.primary_key.columns.keys()
                         },
                     )
-                cur = conn.execute(stmt, rows)
+                with conn.begin():
+                    cur = conn.execute(stmt, rows)
                 self._verbose_print(f'Inserted or replaced {len(rows)} rows into table {tb_nm}.')
             elif on_conflict == 'do_nothing':
                 stmt = insert(tb).on_conflict_do_nothing()
-                cur = conn.execute(stmt, rows)
+                with conn.begin():
+                    cur = conn.execute(stmt, rows)
                 self._verbose_print(f'Inserted or do nothing {len(rows)} rows into table {tb_nm}.')
             elif on_conflict in ('ignore', 'skip'):
                 stmt = insert(tb).prefix_with('OR IGNORE')
-                cur = conn.execute(stmt, rows)
+                with conn.begin():
+                    cur = conn.execute(stmt, rows)
                 self._verbose_print(f'Inserted or ignored {len(rows)} rows into table {tb_nm}.')
             elif on_conflict is None:
                 stmt = insert(tb)
-                cur = conn.execute(stmt, rows)
+                with conn.begin():
+                    conn.execute(text('PRAGMA journal_mode = OFF;'))
+                    conn.execute(text('PRAGMA synchronous = OFF;'))
+                    conn.execute(text('PRAGMA temp_store = MEMORY;'))
+                    cur = conn.execute(stmt, rows)
+                    conn.execute(text('PRAGMA journal_mode = WAL;'))
+                    conn.execute(text('PRAGMA synchronous = NORMAL;'))
+                    conn.execute(text('PRAGMA temp_store = DEFAULT;'))
                 self._verbose_print(f'Inserted rows into table {tb_nm}.')
             else:
                 raise ValueError(f'Invalid on_conflict value: {on_conflict}.')
@@ -452,7 +474,8 @@ class Sqlite:
         where_cond = where_parser(where, cols=None, tb=tb)
         with self.engine.connect() as conn:
             stmt = tb.update().where(where_cond)
-            cur = conn.execute(stmt, _set_values)
+            with conn.begin():
+                cur = conn.execute(stmt, _set_values)
             self._verbose_print(f'Updated {cur.rowcount} rows in table {tb_nm}.')
             return cur.rowcount
 
@@ -462,7 +485,8 @@ class Sqlite:
         where_cond = where_parser(where, cols=None, tb=tb)
         with self.engine.connect() as conn:
             stmt = tb.delete().where(where_cond)
-            cur = conn.execute(stmt)
+            with conn.begin():
+                cur = conn.execute(stmt)
             self._verbose_print(f'Deleted {cur.rowcount} rows from table {tb_nm}.')
             return cur.rowcount
 

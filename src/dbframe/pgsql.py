@@ -457,15 +457,18 @@ class Pgsql:
         with self.engine.connect() as conn:
             if on_conflict in ('update', 'replace', 'upsert'):
                 stmt = insert(tb).values(**row).on_conflict_do_update(index_elements=tb.primary_key.columns, set_=row)
-                cur = conn.execute(stmt)
+                with conn.begin():
+                    cur = conn.execute(stmt)
                 self._verbose_print(f'Inserted or replaced row into table {schema_nm}.{tb_nm}.')
             elif on_conflict in ('do_nothing', 'ignore', 'skip'):
                 stmt = insert(tb).values(**row).on_conflict_do_nothing()
-                cur = conn.execute(stmt)
+                with conn.begin():
+                    cur = conn.execute(stmt)
                 self._verbose_print(f'Inserted or ignored row into table {schema_nm}.{tb_nm}.')
             elif on_conflict is None:
                 stmt = insert(tb).values(**row)
-                cur = conn.execute(stmt)
+                with conn.begin():
+                    cur = conn.execute(stmt)
                 self._verbose_print(f'Inserted row into table {schema_nm}.{tb_nm}.')
             else:
                 raise ValueError(f'Invalid on_conflict value: {on_conflict}.')
@@ -506,15 +509,18 @@ class Pgsql:
                             if col_nm not in constraints_col_nms and col_nm not in tb.primary_key.columns.keys()
                         },
                     )
-                cur = conn.execute(stmt, rows)
+                with conn.begin():
+                    cur = conn.execute(stmt, rows)
                 self._verbose_print(f'Inserted or replaced rows into table {schema_nm}.{tb_nm}.')
             elif on_conflict in ('do_nothing', 'ignore', 'skip'):
                 stmt = insert(tb).on_conflict_do_nothing()
-                cur = conn.execute(stmt, rows)
+                with conn.begin():
+                    cur = conn.execute(stmt, rows)
                 self._verbose_print(f'Inserted or ignored rows into table {schema_nm}.{tb_nm}.')
             elif on_conflict is None:
                 stmt = insert(tb)
-                cur = conn.execute(stmt, rows)
+                with conn.begin():
+                    cur = conn.execute(stmt, rows)
                 self._verbose_print(f'Inserted rows into table {schema_nm}.{tb_nm}.')
             else:
                 raise ValueError(f'Invalid on_conflict value: {on_conflict}.')
@@ -572,7 +578,8 @@ class Pgsql:
         where_cond = where_parser(where, cols=None, tb=tb)
         with self.engine.connect() as conn:
             stmt = tb.update().where(where_cond)
-            cur = conn.execute(stmt, _set_values)
+            with conn.begin():
+                cur = conn.execute(stmt, _set_values)
             self._verbose_print(f'Updated {cur.rowcount} rows in table {schema_nm}.{tb_nm}.')
             return cur.rowcount
 
@@ -583,7 +590,8 @@ class Pgsql:
         where_cond = where_parser(where, cols=None, tb=tb)
         with self.engine.connect() as conn:
             stmt = tb.delete().where(where_cond)
-            cur = conn.execute(stmt)
+            with conn.begin():
+                cur = conn.execute(stmt)
             self._verbose_print(f'Deleted {cur.rowcount} rows from table {schema_nm}.{tb_nm}.')
             return cur.rowcount
 
