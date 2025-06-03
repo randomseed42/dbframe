@@ -605,3 +605,19 @@ class TestSqliteDF:
         pkey = db.get_table(tb_nm=tb_nm).primary_key
         assert pkey.name is None
         db.drop_table(tb_nm)
+
+    def test_df_execute_select(self, tmp_dir):
+        db_path = Path(tmp_dir, 'data.db')
+        db = SqliteDF(db_path=db_path)
+        db.create_table(tb_nm='test_table', cols=[Column('id', Integer, primary_key=True), Column('name', String)])
+        db.insert_row(tb_nm='test_table', row={'id': 1, 'name': 'Alice'})
+        db.insert_row(tb_nm='test_table', row={'id': 2, 'name': 'Bob'})
+        db.insert_row(tb_nm='test_table', row={'id': 3, 'name': 'Charlie'})
+        db.create_table(tb_nm='test_table2', cols=[Column('id', Integer, primary_key=True), Column('age', Integer)])
+        db.insert_row(tb_nm='test_table2', row={'id': 1, 'age': 20})
+        db.insert_row(tb_nm='test_table2', row={'id': 2, 'age': 30})
+        db.insert_row(tb_nm='test_table2', row={'id': 3, 'age': 40})
+        df = db.df_execute_select('SELECT * FROM test_table')
+        assert df.equals(pd.DataFrame({'id': [1, 2, 3], 'name': ['Alice', 'Bob', 'Charlie']}).convert_dtypes())
+        df = db.df_execute_select('SELECT t1.name, t2.age FROM test_table t1 JOIN test_table2 t2 ON t1.id = t2.id')
+        assert df.equals(pd.DataFrame({'name': ['Alice', 'Bob', 'Charlie'], 'age': [20, 30, 40]}).convert_dtypes())

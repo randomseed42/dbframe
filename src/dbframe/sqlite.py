@@ -22,6 +22,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.sqlite import insert
+from sqlalchemy.exc import ResourceClosedError
 from sqlalchemy.util import FacadeDict
 
 from .clause import Order, Where, order_parser, where_parser
@@ -598,3 +599,19 @@ class SqliteDF(Sqlite):
         )
         df = pd.DataFrame(data=rows, columns=col_nms).convert_dtypes()
         return df
+
+    def df_execute_select(
+        self,
+        sql: str | TextClause,
+    ) -> pd.DataFrame | None:
+        cur = self._execute_sql(
+            sql=sql,
+        )
+        try:
+            col_nms = list(cur.keys())
+            rows = cur.fetchall()
+            df = pd.DataFrame(data=rows, columns=col_nms).convert_dtypes()
+            return df
+        except ResourceClosedError as err:
+            self._verbose_print(f'Failed to execute SQL: {err}')
+            return
