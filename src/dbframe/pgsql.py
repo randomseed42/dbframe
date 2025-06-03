@@ -25,7 +25,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.exc import ProgrammingError, ResourceClosedError
 from sqlalchemy.sql.sqltypes import TypeEngine
 from sqlalchemy.util import FacadeDict
 
@@ -761,3 +761,19 @@ class PgsqlDF(Pgsql):
         )
         df = pd.DataFrame(data=rows, columns=col_nms).convert_dtypes()
         return df
+
+    def df_execute_select(
+        self,
+        sql: str | TextClause,
+    ) -> pd.DataFrame | None:
+        cur = self._execute_sql(
+            sql=sql,
+        )
+        try:
+            col_nms = list(cur.keys())
+            rows = cur.fetchall()
+            df = pd.DataFrame(data=rows, columns=col_nms).convert_dtypes()
+            return df
+        except ResourceClosedError as err:
+            self._verbose_print(f'Failed to execute SQL: {err}')
+            return

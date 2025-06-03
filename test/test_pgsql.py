@@ -719,3 +719,26 @@ class TestPgsqlDF:
         pkey = pg.get_table(schema_nm=schema_nm, tb_nm=tb_nm).primary_key
         assert pkey.name is None
         pg.drop_table(schema_nm, tb_nm)
+
+    def test_df_execute_select_sql(self, pg: PgsqlDF):
+        schema_nm = 'test_schema'
+        pg.create_table(
+            schema_nm=schema_nm, tb_nm='test_table_2', cols=[Column('id', Integer, primary_key=True), Column('name', String)]
+        )
+        pg.insert_row(schema_nm=schema_nm, tb_nm='test_table_2', row={'id': 1, 'name': 'Alice'})
+        pg.insert_row(schema_nm=schema_nm, tb_nm='test_table_2', row={'id': 2, 'name': 'Bob'})
+        pg.insert_row(schema_nm=schema_nm, tb_nm='test_table_2', row={'id': 3, 'name': 'Charlie'})
+        pg.create_table(
+            schema_nm=schema_nm, tb_nm='test_table_3', cols=[Column('id', Integer, primary_key=True), Column('age', Integer)]
+        )
+        pg.insert_row(schema_nm=schema_nm, tb_nm='test_table_3', row={'id': 1, 'age': 20})
+        pg.insert_row(schema_nm=schema_nm, tb_nm='test_table_3', row={'id': 2, 'age': 30})
+        pg.insert_row(schema_nm=schema_nm, tb_nm='test_table_3', row={'id': 3, 'age': 40})
+        df = pg.df_execute_select(f'SELECT * FROM {schema_nm}.test_table_2')
+        assert df.equals(pd.DataFrame({'id': [1, 2, 3], 'name': ['Alice', 'Bob', 'Charlie']}).convert_dtypes())
+        df = pg.df_execute_select(
+            f'SELECT t2.name, t3.age FROM {schema_nm}.test_table_2 t2 JOIN {schema_nm}.test_table_3 t3 ON t2.id = t3.id'
+        )
+        assert df.equals(pd.DataFrame({'name': ['Alice', 'Bob', 'Charlie'], 'age': [20, 30, 40]}).convert_dtypes())
+        pg.drop_table(schema_nm, 'test_table_2')
+        pg.drop_table(schema_nm, 'test_table_3')
