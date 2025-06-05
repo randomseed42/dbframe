@@ -558,7 +558,7 @@ class Pgsql:
         with self.engine.connect() as conn:
             stmt = select(*selected_cols).where(where_cond).order_by(*order_cond).offset(offset).limit(limit)
             cur = conn.execute(stmt)
-            cols = list(cur.keys())
+            cols = [str(col) for col in cur.keys()]
             rows = cur.fetchall()
             self._verbose_print(f'Selected {len(rows)} rows from table {schema_nm}.{tb_nm}.')
             return cols, rows
@@ -770,7 +770,7 @@ class PgsqlDF(Pgsql):
             sql=sql,
         )
         try:
-            col_nms = list(cur.keys())
+            col_nms = [str(col) for col in cur.keys()]
             rows = cur.fetchall()
             df = pd.DataFrame(data=rows, columns=col_nms).convert_dtypes()
             return df
