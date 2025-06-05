@@ -416,11 +416,9 @@ class Sqlite:
             elif on_conflict is None:
                 stmt = insert(tb)
                 with conn.begin():
-                    conn.execute(text('PRAGMA journal_mode = OFF;'))
                     conn.execute(text('PRAGMA synchronous = OFF;'))
                     conn.execute(text('PRAGMA temp_store = MEMORY;'))
                     cur = conn.execute(stmt, rows)
-                    conn.execute(text('PRAGMA journal_mode = WAL;'))
                     conn.execute(text('PRAGMA synchronous = NORMAL;'))
                     conn.execute(text('PRAGMA temp_store = DEFAULT;'))
                 self._verbose_print(f'Inserted rows into table {tb_nm}.')
