@@ -4,6 +4,7 @@ numpy==2.2.5
 orjson==3.10.18
 orjsonic==0.1.6
 pandas==2.2.3
-psycopg2==2.9.10
+psycopg2-binary==2.9.10; sys_platform != 'win32'
+psycopg2==2.9.10; sys_platform == 'win32'
 pyarrow==20.0.0
 sqlalchemy==2.0.40

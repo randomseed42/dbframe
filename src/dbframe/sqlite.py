@@ -33,7 +33,7 @@ from .validator import NameValidator
 class Sqlite:
     def __init__(
         self,
-        db_path: str | os.PathLike | pathlib.Path = None,
+        db_path: str | os.PathLike | pathlib.Path | None = None,
         verbose: bool = False,
         **kwargs,
     ):
@@ -63,7 +63,7 @@ class Sqlite:
     @staticmethod
     def get_abs_db_path(db_path: str | os.PathLike | pathlib.Path) -> str:
         if db_path == ':memory:':
-            return db_path
+            return str(db_path)
         if str(db_path).startswith(':') and str(db_path).endswith(':'):
             raise ValueError('Only :memory: is allowed for this style of db_path.')
         db_path = os.path.abspath(os.path.normpath(db_path))
@@ -137,7 +137,8 @@ class Sqlite:
         if len(cols) == 0:
             raise ValueError(f'Columns {cols} cannot be empty.')
         for col in cols:
-            col.name = NameValidator.column(col.name)
+            if isinstance(col, Column):
+                col.name = NameValidator.column(col.name)
         metadata = MetaData()
         tb = Table(tb_nm, metadata, *cols, sqlite_autoincrement=sqlite_autoincrement)
         tb.create(bind=self.engine, checkfirst=False)
@@ -148,7 +149,7 @@ class Sqlite:
         tb_nm = NameValidator.table(tb_nm)
         return inspect(self.engine).has_table(table_name=tb_nm)
 
-    def get_table(self, tb_nm: str, **kwargs) -> Table | None:
+    def get_table(self, tb_nm: str, **kwargs) -> Table:
         tb_nm = NameValidator.table(tb_nm)
         if not self.table_exists(tb_nm=tb_nm):
             raise ValueError(f'Table {tb_nm} does not exist.')
@@ -247,7 +248,7 @@ class Sqlite:
             self._verbose_print(f'Column {col_nm} renamed to {new_col_nm} in table {tb_nm}.')
         return self.get_column(tb_nm=tb_nm, col_nm=new_col_nm, **kwargs)
 
-    def alter_column(self, tb_nm: str, col_nm: str, new_col_nm: str, sql_dtype: str = None, **kwargs) -> Column:
+    def alter_column(self, tb_nm: str, col_nm: str, new_col_nm: str, sql_dtype: str | None = None, **kwargs) -> Column:
         if sql_dtype is not None:
             raise NotImplementedError(
                 'SQLite does not support altering a table column datatype directly. You need to create a new table and copy data from original table.'
@@ -282,7 +283,7 @@ class Sqlite:
             return dropped_col_nms
 
     # Index CRUD
-    def create_index(self, tb_nm: str, col_nms: Sequence[str], idx_nm: str = None, unique: bool = False, **kwargs) -> Index:
+    def create_index(self, tb_nm: str, col_nms: Sequence[str], idx_nm: str | None = None, unique: bool = False, **kwargs) -> Index:
         tb_nm = NameValidator.table(tb_nm)
         col_nms = [NameValidator.column(col_nm) for col_nm in col_nms]
         current_cols = self.get_columns(tb_nm=tb_nm, **kwargs)
@@ -303,14 +304,12 @@ class Sqlite:
             self._verbose_print(f'Index {idx_nm} created on table {tb_nm} with columns {col_nms}.')
         return self.get_index(tb_nm=tb_nm, idx_nm=idx_nm, **kwargs)
 
-    def get_index(self, tb_nm: str, col_nms: Sequence[str] = None, idx_nm: str = None, **kwargs) -> Index:
-        if idx_nm is None and col_nms is None:
-            raise ValueError('Either idx_nm or col_nms must be provided.')
+    def get_index(self, tb_nm: str, col_nms: Sequence[str] | None = None, idx_nm: str | None = None, **kwargs) -> Index:
         indexes = self.get_indexes(tb_nm=tb_nm, **kwargs)
         if idx_nm is not None:
-            if idx_nm in indexes:
-                return indexes.get(idx_nm)
-            raise ValueError(f'Index {idx_nm} does not exist in table {tb_nm}.')
+            if idx_nm not in indexes:
+                raise ValueError(f'Index {idx_nm} does not exist in table {tb_nm}.')
+            return indexes[idx_nm]
         if col_nms is not None:
             col_nms = [NameValidator.column(col_nm) for col_nm in col_nms]
             current_cols = self.get_columns(tb_nm=tb_nm, **kwargs)
@@ -321,28 +320,30 @@ class Sqlite:
                 if set(idx.columns.keys()) == set(col_nms):
                     return idx
             raise ValueError(f'Index with columns {col_nms} does not exist in table {tb_nm}.')
+        else:
+            raise ValueError('Either idx_nm or col_nms must be provided.')
 
     def get_indexes(self, tb_nm: str, **kwargs) -> dict[str, Index]:
         tb_nm = NameValidator.table(tb_nm)
         tb = self.get_table(tb_nm=tb_nm, **kwargs)
-        return {idx.name: idx for idx in tb.indexes}
+        return {str(idx.name): idx for idx in tb.indexes}
 
-    def drop_index(self, tb_nm: str, col_nms: Sequence[str] = None, idx_nm: str = None, **kwargs) -> str:
+    def drop_index(self, tb_nm: str, col_nms: Sequence[str] | None = None, idx_nm: str | None = None, **kwargs) -> str:
         tb_nm = NameValidator.table(tb_nm)
         idx = self.get_index(tb_nm=tb_nm, col_nms=col_nms, idx_nm=idx_nm, **kwargs)
         with self.engine.connect() as conn:
             ctx = MigrationContext.configure(conn)
             op = Operations(ctx)
-            op.drop_index(idx.name, tb_nm, if_exists=False, **kwargs)
+            op.drop_index(str(idx.name), tb_nm, if_exists=False, **kwargs)
             self._verbose_print(f'Index {idx.name} dropped from table {tb_nm}.')
-            return idx.name
+            return str(idx.name)
 
     # Rows CRUD
     def insert_row(
         self,
         tb_nm: str,
         row: dict[str, Any],
-        on_conflict: Literal['do_nothing', 'ignore', 'skip', 'update', 'replace', 'upsert'] = None,
+        on_conflict: Literal['do_nothing', 'ignore', 'skip', 'update', 'replace', 'upsert'] | None = None,
         row_key_validate: bool = False,
         **kwargs,
     ) -> int:
@@ -371,10 +372,12 @@ class Sqlite:
         self,
         tb_nm: str,
         rows: Sequence[dict[str, Any]],
-        on_conflict: Literal['do_nothing', 'ignore', 'skip', 'update', 'replace', 'upsert'] = None,
+        on_conflict: Literal['do_nothing', 'ignore', 'skip', 'update', 'replace', 'upsert'] | None = None,
         row_key_validate: bool = False,
         **kwargs,
     ) -> int:
+        if len(rows) == 0:
+            return 0
         tb_nm = NameValidator.table(tb_nm)
         tb = self.get_table(tb_nm=tb_nm, **kwargs)
         if row_key_validate:
@@ -429,13 +432,13 @@ class Sqlite:
     def select_rows(
         self,
         tb_nm: str,
-        col_nms: Sequence[str] = None,
-        where: Where | Sequence = None,
-        order: Order | Sequence[Order] = None,
-        limit: int = None,
-        offset: int = None,
+        col_nms: Sequence[str] | None = None,
+        where: Where | list[Where] | tuple[Where] | None = None,
+        order: Order | Sequence[Order] | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
         **kwargs,
-    ) -> tuple[list[str], list[Row]] | None:
+    ) -> tuple[list[str], Sequence[Row]]:
         tb_nm = NameValidator.table(tb_nm)
         # self.get_table(tb_nm=tb_nm, **kwargs)
         current_cols = self.get_columns(tb_nm=tb_nm, **kwargs)
@@ -461,7 +464,7 @@ class Sqlite:
             self._verbose_print(f'Selected {len(rows)} rows from table {tb_nm}.')
             return cols, rows
 
-    def update_rows(self, tb_nm: str, set_values: dict[str, Any], where: Where | Sequence = None, **kwargs) -> int:
+    def update_rows(self, tb_nm: str, set_values: dict[str, Any], where: Where | list[Where] | tuple[Where] | None = None, **kwargs) -> int:
         tb_nm = NameValidator.table(tb_nm)
         tb = self.get_table(tb_nm=tb_nm, **kwargs)
         _set_values = {}
@@ -478,7 +481,7 @@ class Sqlite:
             self._verbose_print(f'Updated {cur.rowcount} rows in table {tb_nm}.')
             return cur.rowcount
 
-    def delete_rows(self, tb_nm: str, where: Where | Sequence = None, **kwargs) -> int:
+    def delete_rows(self, tb_nm: str, where: Where | list[Where] | tuple[Where] | None = None, **kwargs) -> int:
         tb_nm = NameValidator.table(tb_nm)
         tb = self.get_table(tb_nm=tb_nm, **kwargs)
         where_cond = where_parser(where, cols=None, tb=tb)
@@ -499,18 +502,18 @@ class Sqlite:
 
 
 class SqliteDF(Sqlite):
-    def __init__(self, db_path: str | os.PathLike | pathlib.Path = None, verbose: bool = False, **kwargs):
+    def __init__(self, db_path: str | os.PathLike | pathlib.Path | None = None, verbose: bool = False, **kwargs):
         super().__init__(db_path=db_path, verbose=verbose, **kwargs)
 
     def df_create_table(
         self,
         df: pd.DataFrame,
         tb_nm: str,
-        primary_col_nm: str = None,
+        primary_col_nm: str | None = None,
         primary_col_autoinc: Literal['auto', True, False] = 'auto',
-        notnull_col_nms: Sequence[str] = None,
-        index_col_nms: Sequence[str | Sequence[str]] = None,
-        unique_col_nms: Sequence[str | Sequence[str]] = None,
+        notnull_col_nms: Sequence[str] | None = None,
+        index_col_nms: Sequence[str | Sequence[str]] | None = None,
+        unique_col_nms: Sequence[str | Sequence[str]] | None = None,
         **kwargs,
     ) -> Table:
         cols = df_to_schema_items(
@@ -528,6 +531,7 @@ class SqliteDF(Sqlite):
 
     def df_add_columns(self, df: pd.DataFrame, tb_nm: str, **kwargs) -> Sequence[str]:
         cols = df_to_schema_items(df=df, tb_nm=tb_nm, dialect='sqlite')
+        cols = [col for col in cols if isinstance(col, Column)]
         new_col_nms = self.add_columns(tb_nm=tb_nm, cols=cols, **kwargs)
         return new_col_nms
 
@@ -536,7 +540,7 @@ class SqliteDF(Sqlite):
         df: pd.DataFrame,
         tb_nm: str,
         add_cols: bool = True,
-        on_conflict: Literal['do_nothing', 'ignore', 'skip', 'update', 'replace', 'upsert'] = None,
+        on_conflict: Literal['do_nothing', 'ignore', 'skip', 'update', 'replace', 'upsert'] | None = None,
         **kwargs,
     ) -> int:
         tb_nm = NameValidator.table(tb_nm)
@@ -550,11 +554,11 @@ class SqliteDF(Sqlite):
         self,
         df: pd.DataFrame,
         tb_nm: str,
-        primary_col_nm: str = None,
+        primary_col_nm: str | None = None,
         primary_col_autoinc: Literal['auto', True, False] = 'auto',
-        notnull_col_nms: Sequence[str] = None,
-        index_col_nms: Sequence[str | Sequence[str]] = None,
-        unique_col_nms: Sequence[str | Sequence[str]] = None,
+        notnull_col_nms: Sequence[str] | None = None,
+        index_col_nms: Sequence[str | Sequence[str]] | None = None,
+        unique_col_nms: Sequence[str | Sequence[str]] | None = None,
     ):
         if not self.table_exists(tb_nm=tb_nm):
             self.df_create_table(
@@ -579,11 +583,11 @@ class SqliteDF(Sqlite):
     def df_select_rows(
         self,
         tb_nm: str,
-        col_nms: Sequence[str] = None,
-        where: Where | Sequence = None,
-        order: Order | Sequence[Order] = None,
-        limit: int = None,
-        offset: int = None,
+        col_nms: Sequence[str] | None = None,
+        where: Where | list[Where] | tuple[Where] | None = None,
+        order: Order | Sequence[Order] | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
         **kwargs,
     ) -> pd.DataFrame:
         col_nms, rows = self.select_rows(
@@ -611,5 +615,5 @@ class SqliteDF(Sqlite):
             df = pd.DataFrame(data=rows, columns=col_nms).convert_dtypes()
             return df
         except ResourceClosedError as err:
-            self._verbose_print(f'Failed to execute SQL: {err}')
+            self._verbose_print(f'No data returned for non-select SQL: {err}')
             return

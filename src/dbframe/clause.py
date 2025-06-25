@@ -1,6 +1,7 @@
-from typing import NamedTuple, Sequence
+from typing import NamedTuple, Sequence, Any
 
 from sqlalchemy import Column, Table, and_, or_, true
+from sqlalchemy.sql import True_, ColumnElement, ColumnCollection as ReadOnlyColumnCollection
 
 from .operator import Operator, get_oper
 from .validator import NameValidator
@@ -13,10 +14,10 @@ class Where(NamedTuple):
 
 
 def where_parser(
-    where: list[Where] | tuple[Where] | Where | None,
-    cols: dict[str, Column] = None,
-    tb: Table = None,
-):
+    where: Where | list[Where] | tuple[Where] | None,
+    cols: dict[str, Column] | ReadOnlyColumnCollection[str, Column[Any]] | None = None,
+    tb: Table | None = None,
+) -> True_ | ColumnElement[bool]:
     if where is None:
         return true()
 
@@ -45,9 +46,9 @@ def where_parser(
     if isinstance(where, Where):
         return _parse(where)
     if isinstance(where, list):
-        return and_(where_parser(where=_where, cols=cols, tb=tb) for _where in where)
+        return and_(*(where_parser(where=_where, cols=cols, tb=tb) for _where in where))
     if isinstance(where, tuple):
-        return or_(where_parser(where=_where, cols=cols, tb=tb) for _where in where)
+        return or_(*(where_parser(where=_where, cols=cols, tb=tb) for _where in where))
 
 
 class Order(NamedTuple):
@@ -56,10 +57,10 @@ class Order(NamedTuple):
 
 
 def order_parser(
-    order: list[Order] | tuple[Order] | Order | None,
-    cols: dict[str, Column] = None,
-    tb: Table = None,
-):
+    order: Sequence[Order] | Order | None,
+    cols: dict[str, Column] | ReadOnlyColumnCollection[str, Column[Any]] | None = None,
+    tb: Table | None = None,
+) -> list[Any]:
     if order is None:
         return [None]
 
@@ -70,12 +71,15 @@ def order_parser(
 
     if isinstance(order, Order):
         column_name = NameValidator.column(order.column_name)
+        col = cols.get(column_name)
+        if col is None:
+            raise ValueError(f'Column {column_name} not found in columns.')
         if order.ascending:
-            return [cols.get(column_name).asc()]
+            return [col.asc()]
         else:
-            return [cols.get(column_name).desc()]
+            return [col.desc()]
 
-    if isinstance(order, list | tuple):
+    if isinstance(order, Sequence):
         orders = []
         for _o in order:
             orders.extend(order_parser(order=_o, cols=cols, tb=tb))

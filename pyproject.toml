@@ -1,6 +1,6 @@
 [project]
 name = "dbframe"
-version = "0.1.13"
+version = "0.1.14"
 description = "A python package to simplify CRUD operations between SQL databases and pandas dataframe."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -25,7 +25,8 @@ dependencies = [
   "alembic",
   "orjsonic",
   "pandas",
-  "psycopg2",
+  "psycopg2-binary; sys_platform != 'win32'",
+  "psycopg2; sys_platform == 'win32'",
   "pyarrow",
   "sqlalchemy",
 ]
