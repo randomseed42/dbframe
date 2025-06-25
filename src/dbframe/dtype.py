@@ -130,7 +130,7 @@ DTYPE_PANDAS_TO_SQL_MAPPER = {
 }
 
 
-def _object_to_sql_dtype(obj: Any) -> TypeEngine:
+def _object_to_sql_dtype(obj: Any) -> TypeEngine[Any] | type[TypeEngine[Any]] | None:
     if isinstance(obj, type):
         return DTYPE_PY_TO_SQL_MAPPER[obj]
     if isinstance(obj, str):
@@ -158,7 +158,7 @@ def _object_to_sql_dtype(obj: Any) -> TypeEngine:
         if sub_type in DTYPE_NUMPY_TO_SQL_MAPPER:
             return DTYPE_NUMPY_TO_SQL_MAPPER[sub_type]
         if sub_type is pd.Timestamp:
-            if pd_type.tz is None:
+            if getattr(pd_type, 'tz') is None:
                 return DateTime
             else:
                 return DATETIME_TIMEZONE
@@ -177,7 +177,7 @@ def _object_to_sql_dtype(obj: Any) -> TypeEngine:
             return String
 
 
-def object_to_sql_dtype(obj: Any, dialect: Literal['sqlite', 'postgresql'] = None) -> TypeEngine:
+def object_to_sql_dtype(obj: Any, dialect: Literal['sqlite', 'postgresql'] | None = None) -> TypeEngine[Any] | type[TypeEngine[Any]]:
     sql_dtype = _object_to_sql_dtype(obj)
     if sql_dtype is None:
         raise TypeError(f'unsupported dtype {type(obj)}.')
@@ -189,7 +189,7 @@ def object_to_sql_dtype(obj: Any, dialect: Literal['sqlite', 'postgresql'] = Non
     return sql_dtype
 
 
-def _df_convert_dtypes(df: pd.DataFrame, dialect: Literal['sqlite', 'postgresql'] = None) -> pd.DataFrame:
+def _df_convert_dtypes(df: pd.DataFrame, dialect: Literal['sqlite', 'postgresql'] | None = None) -> tuple[list[str], pd.DataFrame]:
     byte_col_nms = []
     for col_nm in df.columns:
         try:
@@ -211,9 +211,9 @@ def _df_convert_dtypes(df: pd.DataFrame, dialect: Literal['sqlite', 'postgresql'
 
 def _df_to_primary_col(
     df: pd.DataFrame,
-    primary_col_nm: str = None,
+    primary_col_nm: str | None = None,
     primary_col_autoinc: Literal['auto', True, False] = 'auto',
-    dialect: Literal['sqlite', 'postgresql'] = None,
+    dialect: Literal['sqlite', 'postgresql'] | None = None,
 ) -> Column | None:
     if primary_col_nm is None:
         return
@@ -242,7 +242,7 @@ def _df_to_primary_col(
         raise ValueError(f'invalid primary_col_autoinc value {primary_col_autoinc}.')
 
 
-def _df_to_index_constraint(df: pd.DataFrame, tb_nm: str, index_col_grp: str | Sequence[str]) -> Constraint:
+def _df_to_index_constraint(df: pd.DataFrame, tb_nm: str, index_col_grp: str | Sequence[str]) -> Constraint | Index:
     if isinstance(index_col_grp, str):
         index_col_grp = [index_col_grp]
     index_col_nms = []
@@ -269,7 +269,7 @@ def _df_to_unique_constraint(df: pd.DataFrame, tb_nm: str, unique_col_grp: str |
         if _unique_col_nm in unique_col_nms:
             raise ValueError(f'unique column {unique_col_nm} already in unique group.')
         unique_col_nms.append(_unique_col_nm)
-    unique_nm = 'uix_{}_{}'.format(tb_nm, '_'.join(unique_col_nms))
+    unique_nm = 'uix_{}_{}'.format(tb_nm, '_'.join(unique_col_nms))[:62]
     unique = UniqueConstraint(*unique_col_nms, name=unique_nm)
     return unique
 
@@ -277,12 +277,12 @@ def _df_to_unique_constraint(df: pd.DataFrame, tb_nm: str, unique_col_grp: str |
 def df_to_schema_items(
     df: pd.DataFrame,
     tb_nm: str,
-    primary_col_nm: str = None,
+    primary_col_nm: str | None = None,
     primary_col_autoinc: Literal['auto', True, False] = 'auto',
-    notnull_col_nms: Sequence[str] = None,
-    index_col_nms: Sequence[str | Sequence[str]] = None,
-    unique_col_nms: Sequence[str | Sequence[str]] = None,
-    dialect: Literal['sqlite', 'postgresql'] = None,
+    notnull_col_nms: Sequence[str] | None = None,
+    index_col_nms: Sequence[str | Sequence[str]] | None = None,
+    unique_col_nms: Sequence[str | Sequence[str]] | None = None,
+    dialect: Literal['sqlite', 'postgresql'] | None = None,
 ) -> Sequence[Column | Constraint | Index | UniqueConstraint]:
     _, df = _df_convert_dtypes(df, dialect=dialect)
     tb_nm = NameValidator.table(tb_nm)
@@ -316,8 +316,8 @@ def df_to_schema_items(
     return schema_items
 
 
-def df_to_rows(df: pd.DataFrame, dialect: Literal['sqlite', 'postgresql'] = None) -> Sequence[dict]:
-    df.columns = map(NameValidator.column, df.columns)
+def df_to_rows(df: pd.DataFrame, dialect: Literal['sqlite', 'postgresql'] | None = None) -> Sequence[dict]:
+    df.columns = list(map(NameValidator.column, df.columns))
     byte_col_nms, df = _df_convert_dtypes(df, dialect=dialect)
 
     def decode_bytes(row: dict) -> dict:
@@ -326,6 +326,8 @@ def df_to_rows(df: pd.DataFrame, dialect: Literal['sqlite', 'postgresql'] = None
         return row
 
     rows = orjsonic.loads(orjsonic.dumps(df.to_dict(orient='records')))
+    if not isinstance(rows, list):
+        raise TypeError('df converted to rows should be a list of dicts.')
     if len(byte_col_nms) == 0:
         return rows
     rows = list(map(decode_bytes, rows))

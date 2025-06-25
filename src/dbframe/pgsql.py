@@ -37,11 +37,11 @@ from .validator import NameValidator
 class Pgsql:
     def __init__(
         self,
-        host: str = None,
-        port: int | str = None,
-        user: str = None,
-        password: str = None,
-        dbname: str = None,
+        host: str | None = None,
+        port: int | str | None = None,
+        user: str | None = None,
+        password: str | None = None,
+        dbname: str | None = None,
         verbose: bool = False,
         **kwargs,
     ):
@@ -131,18 +131,18 @@ class Pgsql:
         return [r[0] for r in rows]
 
     def drop_database(self, dbname: str) -> str:
-        dbname = self.get_database(dbname)
-        if dbname is None:
-            raise ValueError(f'Database {dbname} does not exist.')
-        if dbname == self.dbname:
-            raise ValueError(f'Cannot drop the current database {dbname}.')
+        _dbname = self.get_database(dbname)
+        if _dbname is None:
+            raise ValueError(f'Database {_dbname} does not exist.')
+        if _dbname == self.dbname:
+            raise ValueError(f'Cannot drop the current database {_dbname}.')
         pg = Pgsql(
             host=self.host, port=self.port, user=self.user, password=self.password, dbname='postgres', verbose=self.verbose
         )
-        stmt = text(f'DROP DATABASE {dbname};')
+        stmt = text(f'DROP DATABASE {_dbname};')
         pg._execute_sql(stmt)
-        self._verbose_print(f'Dropped database {dbname}.')
-        return dbname
+        self._verbose_print(f'Dropped database {_dbname}.')
+        return _dbname
 
     # Schema CRUD
     def create_schema(self, schema_nm: str) -> str | None:
@@ -193,10 +193,12 @@ class Pgsql:
         if len(cols) == 0:
             raise ValueError(f'Columns {cols} cannot be empty.')
         for col in cols:
-            col.name = NameValidator.column(col.name)
+            if isinstance(col, Column):
+                col.name = NameValidator.column(col.name)
         metadata = MetaData(schema=schema_nm)
         for col in cols:
-            col.name = NameValidator.column(col.name)
+            if isinstance(col, Column):
+                col.name = NameValidator.column(col.name)
         tb = Table(tb_nm, metadata, *cols)
         tb.create(bind=self.engine, checkfirst=False)
         self._verbose_print(f'Table {schema_nm}.{tb_nm} created.')
@@ -313,7 +315,7 @@ class Pgsql:
         return self.get_column(schema_nm=schema_nm, tb_nm=tb_nm, col_nm=new_col_nm, **kwargs)
 
     def alter_column(
-        self, schema_nm: str, tb_nm: str, col_nm: str, sql_dtype: str | TypeEngine | type, new_col_nm: str = None, **kwargs
+        self, schema_nm: str, tb_nm: str, col_nm: str, sql_dtype: str | TypeEngine | type, new_col_nm: str | None = None, **kwargs
     ) -> Column:
         schema_nm = NameValidator.schema(schema_nm)
         tb_nm = NameValidator.table(tb_nm)
@@ -378,7 +380,7 @@ class Pgsql:
 
     # Index CRUD
     def create_index(
-        self, schema_nm: str, tb_nm: str, col_nms: Sequence[str], idx_nm: str = None, unique: bool = False, **kwargs
+        self, schema_nm: str, tb_nm: str, col_nms: Sequence[str], idx_nm: str | None = None, unique: bool = False, **kwargs
     ) -> Index:
         schema_nm = NameValidator.schema(schema_nm)
         tb_nm = NameValidator.table(tb_nm)
@@ -401,16 +403,14 @@ class Pgsql:
             self._verbose_print(f'Index {idx_nm} created on table {schema_nm}.{tb_nm} with columns {col_nms}.')
         return self.get_index(schema_nm=schema_nm, tb_nm=tb_nm, idx_nm=idx_nm, **kwargs)
 
-    def get_index(self, schema_nm: str, tb_nm: str, col_nms: Sequence[str] = None, idx_nm: str = None, **kwargs) -> Index:
+    def get_index(self, schema_nm: str, tb_nm: str, col_nms: Sequence[str] | None = None, idx_nm: str | None = None, **kwargs) -> Index:
         schema_nm = NameValidator.schema(schema_nm)
         tb_nm = NameValidator.table(tb_nm)
-        if idx_nm is None and col_nms is None:
-            raise ValueError('Either idx_nm or col_nms must be provided.')
         indexes = self.get_indexes(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
         if idx_nm is not None:
-            if idx_nm in indexes:
-                return indexes.get(idx_nm)
-            raise ValueError(f'Index {idx_nm} does not exist in table {schema_nm}.{tb_nm}.')
+            if idx_nm not in indexes:
+                raise ValueError(f'Index {idx_nm} does not exist in table {schema_nm}.{tb_nm}.')
+            return indexes[idx_nm]
         if col_nms is not None:
             col_nms = [NameValidator.column(col_nm) for col_nm in col_nms]
             current_cols = self.get_columns(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
@@ -421,23 +421,25 @@ class Pgsql:
                 if set(idx.columns.keys()) == set(col_nms):
                     return idx
             raise ValueError(f'Index with columns {col_nms} does not exist in table {schema_nm}.{tb_nm}.')
+        else:
+            raise ValueError('Either idx_nm or col_nms must be provided.')
 
     def get_indexes(self, schema_nm: str, tb_nm: str, **kwargs) -> dict[str, Index]:
         schema_nm = NameValidator.schema(schema_nm)
         tb_nm = NameValidator.table(tb_nm)
         tb = self.get_table(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
-        return {idx.name: idx for idx in tb.indexes}
+        return {str(idx.name): idx for idx in tb.indexes}
 
-    def drop_index(self, schema_nm: str, tb_nm: str, col_nms: Sequence[str] = None, idx_nm: str = None, **kwargs) -> str:
+    def drop_index(self, schema_nm: str, tb_nm: str, col_nms: Sequence[str] | None = None, idx_nm: str | None = None, **kwargs) -> str:
         schema_nm = NameValidator.schema(schema_nm)
         tb_nm = NameValidator.table(tb_nm)
         idx = self.get_index(schema_nm=schema_nm, tb_nm=tb_nm, col_nms=col_nms, idx_nm=idx_nm, **kwargs)
         with self.engine.connect() as conn:
             ctx = MigrationContext.configure(conn)
             op = Operations(ctx)
-            op.drop_index(idx.name, tb_nm, schema=schema_nm, if_exists=False, **kwargs)
+            op.drop_index(str(idx.name), tb_nm, schema=schema_nm, if_exists=False, **kwargs)
             self._verbose_print(f'Index {idx.name} dropped from table {schema_nm}.{tb_nm}.')
-            return idx.name
+            return str(idx.name)
 
     # Row CRUD
     def insert_row(
@@ -445,7 +447,7 @@ class Pgsql:
         schema_nm: str,
         tb_nm: str,
         row: dict[str, Any],
-        on_conflict: Literal['do_nothing', 'ignore', 'skip', 'update', 'replace', 'upsert'] = None,
+        on_conflict: Literal['do_nothing', 'ignore', 'skip', 'update', 'replace', 'upsert'] | None = None,
         row_key_validate: bool = False,
         **kwargs,
     ) -> int:
@@ -479,10 +481,12 @@ class Pgsql:
         schema_nm: str,
         tb_nm: str,
         rows: Sequence[dict[str, Any]],
-        on_conflict: Literal['do_nothing', 'ignore', 'skip', 'update', 'replace', 'upsert'] = None,
+        on_conflict: Literal['do_nothing', 'ignore', 'skip', 'update', 'replace', 'upsert'] | None = None,
         row_key_validate: bool = False,
         **kwargs,
     ) -> int:
+        if len(rows) == 0:
+            return 0
         schema_nm = NameValidator.schema(schema_nm)
         tb_nm = NameValidator.table(tb_nm)
         tb = self.get_table(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
@@ -530,13 +534,13 @@ class Pgsql:
         self,
         schema_nm: str,
         tb_nm: str,
-        col_nms: Sequence[str] = None,
-        where: Where | Sequence = None,
-        order: Order | Sequence[Order] = None,
-        limit: int = None,
-        offset: int = None,
+        col_nms: Sequence[str] | None = None,
+        where: Where | list[Where] | tuple[Where] | None = None,
+        order: Order | Sequence[Order] | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
         **kwargs,
-    ) -> tuple[list[str], list[Row]] | None:
+    ) -> tuple[list[str], Sequence[Row]]:
         schema_nm = NameValidator.schema(schema_nm)
         tb_nm = NameValidator.table(tb_nm)
         # self.get_table(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
@@ -564,7 +568,7 @@ class Pgsql:
             return cols, rows
 
     def update_rows(
-        self, schema_nm: str, tb_nm: str, set_values: dict[str, Any], where: Where | Sequence = None, **kwargs
+        self, schema_nm: str, tb_nm: str, set_values: dict[str, Any], where: Where | list[Where] | tuple[Where] | None = None, **kwargs
     ) -> int:
         schema_nm = NameValidator.schema(schema_nm)
         tb_nm = NameValidator.table(tb_nm)
@@ -583,7 +587,7 @@ class Pgsql:
             self._verbose_print(f'Updated {cur.rowcount} rows in table {schema_nm}.{tb_nm}.')
             return cur.rowcount
 
-    def delete_rows(self, schema_nm: str, tb_nm: str, where: Where | Sequence = None, **kwargs) -> int:
+    def delete_rows(self, schema_nm: str, tb_nm: str, where: Where | list[Where] | tuple[Where] | None = None, **kwargs) -> int:
         schema_nm = NameValidator.schema(schema_nm)
         tb_nm = NameValidator.table(tb_nm)
         tb = self.get_table(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
@@ -607,11 +611,11 @@ class Pgsql:
 class PgsqlDF(Pgsql):
     def __init__(
         self,
-        host: str = None,
-        port: int | str = None,
-        user: str = None,
-        password: str = None,
-        dbname: str = None,
+        host: str | None = None,
+        port: int | str | None = None,
+        user: str | None = None,
+        password: str | None = None,
+        dbname: str | None = None,
         verbose: bool = False,
         **kwargs,
     ):
@@ -622,11 +626,11 @@ class PgsqlDF(Pgsql):
         df: pd.DataFrame,
         schema_nm: str,
         tb_nm: str,
-        primary_col_nm: str = None,
+        primary_col_nm: str | None = None,
         primary_col_autoinc: Literal['auto', True, False] = 'auto',
-        notnull_col_nms: Sequence[str] = None,
-        index_col_nms: Sequence[str | Sequence[str]] = None,
-        unique_col_nms: Sequence[str | Sequence[str]] = None,
+        notnull_col_nms: Sequence[str] | None = None,
+        index_col_nms: Sequence[str | Sequence[str]] | None = None,
+        unique_col_nms: Sequence[str | Sequence[str]] | None = None,
         **kwargs,
     ) -> Table:
         cols = df_to_schema_items(
@@ -644,17 +648,19 @@ class PgsqlDF(Pgsql):
 
     def df_add_columns(self, df: pd.DataFrame, schema_nm: str, tb_nm: str, **kwargs) -> Sequence[str]:
         cols = df_to_schema_items(df=df, tb_nm=tb_nm, dialect='postgresql')
+        cols = [col for col in cols if isinstance(col, Column)]
         new_col_nms = self.add_columns(schema_nm=schema_nm, tb_nm=tb_nm, cols=cols, **kwargs)
         return new_col_nms
 
     def df_alter_columns(self, df: pd.DataFrame, schema_nm: str, tb_nm: str, **kwargs) -> Sequence[Column]:
         cols = df_to_schema_items(df=df, tb_nm=tb_nm, dialect='postgresql')
+        cols = [col for col in cols if isinstance(col, Column)]
         current_cols = self.get_columns(schema_nm=schema_nm, tb_nm=tb_nm)
         alter_cols = []
         for col in cols:
             if col.name not in current_cols:
                 continue
-            if isinstance(current_cols[col.name].type, type(col.type)):
+            if isinstance(current_cols[str(col.name)].type, type(col.type)):
                 continue
             self.alter_column(schema_nm=schema_nm, tb_nm=tb_nm, col_nm=col.name, sql_dtype=col.type, new_col_nm=None, **kwargs)
             alter_cols.append(col)
@@ -684,7 +690,7 @@ class PgsqlDF(Pgsql):
         tb_nm: str,
         add_cols: bool = True,
         alter_cols: bool = True,
-        on_conflict: Literal['do_nothing', 'ignore', 'skip', 'update', 'replace', 'upsert'] = None,
+        on_conflict: Literal['do_nothing', 'ignore', 'skip', 'update', 'replace', 'upsert'] | None = None,
         **kwargs,
     ) -> int:
         schema_nm = NameValidator.schema(schema_nm)
@@ -710,10 +716,10 @@ class PgsqlDF(Pgsql):
         df: pd.DataFrame,
         schema_nm: str,
         tb_nm: str,
-        primary_col_nm: str = None,
-        notnull_col_nms: Sequence[str] = None,
-        index_col_nms: Sequence[str | Sequence[str]] = None,
-        unique_col_nms: Sequence[str | Sequence[str]] = None,
+        primary_col_nm: str | None = None,
+        notnull_col_nms: Sequence[str] | None = None,
+        index_col_nms: Sequence[str | Sequence[str]] | None = None,
+        unique_col_nms: Sequence[str | Sequence[str]] | None = None,
     ):
         if not self.table_exists(schema_nm=schema_nm, tb_nm=tb_nm):
             self.df_create_table(
@@ -742,11 +748,11 @@ class PgsqlDF(Pgsql):
         self,
         schema_nm: str,
         tb_nm: str,
-        col_nms: Sequence[str] = None,
-        where: Where | Sequence = None,
-        order: Order | Sequence[Order] = None,
-        limit: int = None,
-        offset: int = None,
+        col_nms: Sequence[str] | None = None,
+        where: Where | list[Where] | tuple[Where] | None = None,
+        order: Order | Sequence[Order] | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
         **kwargs,
     ) -> pd.DataFrame:
         col_nms, rows = self.select_rows(
@@ -775,5 +781,5 @@ class PgsqlDF(Pgsql):
             df = pd.DataFrame(data=rows, columns=col_nms).convert_dtypes()
             return df
         except ResourceClosedError as err:
-            self._verbose_print(f'Failed to execute SQL: {err}')
+            self._verbose_print(f'No data returned for non-select SQL: {err}')
             return
