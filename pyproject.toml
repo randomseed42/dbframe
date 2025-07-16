@@ -1,6 +1,6 @@
 [project]
 name = "dbframe"
-version = "0.1.14"
+version = "0.1.15"
 description = "A python package to simplify CRUD operations between SQL databases and pandas dataframe."
 readme = "README.md"
 requires-python = ">=3.10"
