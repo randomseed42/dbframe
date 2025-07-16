@@ -100,7 +100,7 @@ class Pgsql:
         )
         if pg.get_database(dbname=dbname) is not None:
             raise ValueError(f'Database {dbname} already exists.')
-        stmt = text(f"CREATE DATABASE {dbname} LOCALE 'en_US.utf8' ENCODING UTF8 TEMPLATE template0;")
+        stmt = text(f"CREATE DATABASE \"{dbname}\" LOCALE 'en_US.utf8' ENCODING UTF8 TEMPLATE template0;")
         pg._execute_sql(stmt)
         self._verbose_print(f'Created database {dbname}.')
         return dbname
@@ -139,7 +139,7 @@ class Pgsql:
         pg = Pgsql(
             host=self.host, port=self.port, user=self.user, password=self.password, dbname='postgres', verbose=self.verbose
         )
-        stmt = text(f'DROP DATABASE {_dbname};')
+        stmt = text(f'DROP DATABASE "{_dbname}";')
         pg._execute_sql(stmt)
         self._verbose_print(f'Dropped database {_dbname}.')
         return _dbname
@@ -149,7 +149,7 @@ class Pgsql:
         schema_nm = NameValidator.schema(schema_nm)
         if inspect(self.engine).has_schema(schema_name=schema_nm):
             raise ValueError(f'Schema {schema_nm} already exists.')
-        stmt = text(f'CREATE SCHEMA IF NOT EXISTS {schema_nm};')
+        stmt = text(f'CREATE SCHEMA IF NOT EXISTS "{schema_nm}";')
         self._execute_sql(stmt)
         self._verbose_print(f'Created schema {schema_nm}.')
         return schema_nm
@@ -173,7 +173,7 @@ class Pgsql:
         schema_nm = NameValidator.schema(schema_nm)
         if self.get_schema(schema_nm=schema_nm) is None:
             raise ValueError(f'Schema {schema_nm} does not exist.')
-        stmt = text(f'DROP SCHEMA {schema_nm} {"CASCADE" if cascade else ""};')
+        stmt = text(f'DROP SCHEMA "{schema_nm}" {"CASCADE" if cascade else ""};')
         self._execute_sql(stmt)
         self._verbose_print(f'Dropped schema {schema_nm}.')
         return schema_nm
@@ -228,7 +228,7 @@ class Pgsql:
         schema_nm = NameValidator.schema(schema_nm)
         tb_nm = NameValidator.table(tb_nm)
         new_tb_nm = NameValidator.table(new_tb_nm)
-        stmt = text(f'ALTER TABLE {schema_nm}.{tb_nm} RENAME TO {new_tb_nm};')
+        stmt = text(f'ALTER TABLE "{schema_nm}"."{tb_nm}" RENAME TO "{new_tb_nm}";')
         self._execute_sql(stmt)
         self._verbose_print(f'Table {schema_nm}.{tb_nm} renamed to {new_tb_nm}.')
         return new_tb_nm
@@ -244,7 +244,7 @@ class Pgsql:
     def truncate_table(self, schema_nm: str, tb_nm: str, restart: bool = True) -> str:
         schema_nm = NameValidator.schema(schema_nm)
         tb_nm = NameValidator.table(tb_nm)
-        stmt = text(f'TRUNCATE TABLE {schema_nm}.{tb_nm} {"RESTART IDENTITY" if restart else ""};')
+        stmt = text(f'TRUNCATE TABLE "{schema_nm}"."{tb_nm}" {"RESTART IDENTITY" if restart else ""};')
         self._execute_sql(stmt)
         self._verbose_print(f'Table {schema_nm}.{tb_nm} truncated.')
         return tb_nm

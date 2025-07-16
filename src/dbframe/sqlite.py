@@ -165,7 +165,7 @@ class Sqlite:
     def rename_table(self, tb_nm: str, new_tb_nm: str, **kwargs) -> str | None:
         tb_nm = NameValidator.table(tb_nm)
         new_tb_nm = NameValidator.table(new_tb_nm)
-        stmt = text(f'ALTER TABLE {tb_nm} RENAME TO {new_tb_nm};')
+        stmt = text(f'ALTER TABLE "{tb_nm}" RENAME TO "{new_tb_nm}";')
         self._execute_sql(stmt)
         self._verbose_print(f'Table {tb_nm} renamed to {new_tb_nm}.')
         return new_tb_nm
