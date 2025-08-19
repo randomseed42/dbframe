@@ -14,7 +14,7 @@ class Where(NamedTuple):
 
 
 def where_parser(
-    where: Where | list[Where] | tuple[Where] | None,
+    where: Where | list[Where] | tuple[Where, ...] | None,
     cols: dict[str, Column] | ReadOnlyColumnCollection[str, Column[Any]] | None = None,
     tb: Table | None = None,
 ) -> True_ | ColumnElement[bool]:

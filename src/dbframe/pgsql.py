@@ -4,9 +4,10 @@ from typing import Any, Literal, Sequence
 from urllib.parse import quote_plus
 
 import pandas as pd
-import psycopg2
+import psycopg
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+from psycopg.sql import SQL, Identifier
 from sqlalchemy import (
     JSON,
     Column,
@@ -73,7 +74,7 @@ class Pgsql:
             print(msg)
 
     def _get_url(self, dbname: str) -> str:
-        url_template = 'postgresql+psycopg2://{user}:{password}@{host}:{port}/{dbname}'
+        url_template = 'postgresql+psycopg://{user}:{password}@{host}:{port}/{dbname}'
         return url_template.format(
             user=self.user,
             password=quote_plus(self.password),
@@ -100,7 +101,7 @@ class Pgsql:
         )
         if pg.get_database(dbname=dbname) is not None:
             raise ValueError(f'Database {dbname} already exists.')
-        stmt = text(f"CREATE DATABASE \"{dbname}\" LOCALE 'en_US.utf8' ENCODING UTF8 TEMPLATE template0;")
+        stmt = text(f'CREATE DATABASE "{dbname}" LOCALE \'en_US.utf8\' ENCODING UTF8 TEMPLATE template0;')
         pg._execute_sql(stmt)
         self._verbose_print(f'Created database {dbname}.')
         return dbname
@@ -315,7 +316,13 @@ class Pgsql:
         return self.get_column(schema_nm=schema_nm, tb_nm=tb_nm, col_nm=new_col_nm, **kwargs)
 
     def alter_column(
-        self, schema_nm: str, tb_nm: str, col_nm: str, sql_dtype: str | TypeEngine | type, new_col_nm: str | None = None, **kwargs
+        self,
+        schema_nm: str,
+        tb_nm: str,
+        col_nm: str,
+        sql_dtype: str | TypeEngine | type,
+        new_col_nm: str | None = None,
+        **kwargs,
     ) -> Column:
         schema_nm = NameValidator.schema(schema_nm)
         tb_nm = NameValidator.table(tb_nm)
@@ -403,7 +410,9 @@ class Pgsql:
             self._verbose_print(f'Index {idx_nm} created on table {schema_nm}.{tb_nm} with columns {col_nms}.')
         return self.get_index(schema_nm=schema_nm, tb_nm=tb_nm, idx_nm=idx_nm, **kwargs)
 
-    def get_index(self, schema_nm: str, tb_nm: str, col_nms: Sequence[str] | None = None, idx_nm: str | None = None, **kwargs) -> Index:
+    def get_index(
+        self, schema_nm: str, tb_nm: str, col_nms: Sequence[str] | None = None, idx_nm: str | None = None, **kwargs
+    ) -> Index:
         schema_nm = NameValidator.schema(schema_nm)
         tb_nm = NameValidator.table(tb_nm)
         indexes = self.get_indexes(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
@@ -430,7 +439,9 @@ class Pgsql:
         tb = self.get_table(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
         return {str(idx.name): idx for idx in tb.indexes}
 
-    def drop_index(self, schema_nm: str, tb_nm: str, col_nms: Sequence[str] | None = None, idx_nm: str | None = None, **kwargs) -> str:
+    def drop_index(
+        self, schema_nm: str, tb_nm: str, col_nms: Sequence[str] | None = None, idx_nm: str | None = None, **kwargs
+    ) -> str:
         schema_nm = NameValidator.schema(schema_nm)
         tb_nm = NameValidator.table(tb_nm)
         idx = self.get_index(schema_nm=schema_nm, tb_nm=tb_nm, col_nms=col_nms, idx_nm=idx_nm, **kwargs)
@@ -535,7 +546,7 @@ class Pgsql:
         schema_nm: str,
         tb_nm: str,
         col_nms: Sequence[str] | None = None,
-        where: Where | list[Where] | tuple[Where] | None = None,
+        where: Where | list[Where] | tuple[Where, ...] | None = None,
         order: Order | Sequence[Order] | None = None,
         limit: int | None = None,
         offset: int | None = None,
@@ -568,7 +579,12 @@ class Pgsql:
             return cols, rows
 
     def update_rows(
-        self, schema_nm: str, tb_nm: str, set_values: dict[str, Any], where: Where | list[Where] | tuple[Where] | None = None, **kwargs
+        self,
+        schema_nm: str,
+        tb_nm: str,
+        set_values: dict[str, Any],
+        where: Where | list[Where] | tuple[Where, ...] | None = None,
+        **kwargs,
     ) -> int:
         schema_nm = NameValidator.schema(schema_nm)
         tb_nm = NameValidator.table(tb_nm)
@@ -587,7 +603,9 @@ class Pgsql:
             self._verbose_print(f'Updated {cur.rowcount} rows in table {schema_nm}.{tb_nm}.')
             return cur.rowcount
 
-    def delete_rows(self, schema_nm: str, tb_nm: str, where: Where | list[Where] | tuple[Where] | None = None, **kwargs) -> int:
+    def delete_rows(
+        self, schema_nm: str, tb_nm: str, where: Where | list[Where] | tuple[Where, ...] | None = None, **kwargs
+    ) -> int:
         schema_nm = NameValidator.schema(schema_nm)
         tb_nm = NameValidator.table(tb_nm)
         tb = self.get_table(schema_nm=schema_nm, tb_nm=tb_nm, **kwargs)
@@ -673,12 +691,17 @@ class PgsqlDF(Pgsql):
         with BytesIO() as buf:
             df.to_csv(buf, index=False, header=False, sep='\t')
             data = buf.getvalue().replace(b'\r', b'')
-        with psycopg2.connect(
+        with psycopg.connect(
             host=self.host, port=self.port, user=self.user, password=self.password, dbname=self.dbname
         ) as conn:
             with conn.cursor() as cur:
-                cur.execute(f'SET search_path TO {schema_nm}')
-                cur.copy_from(file=BytesIO(data), table=tb_nm, sep='\t', null='', columns=col_nms)
+                sql = SQL("COPY {}.{} ({}) FROM STDIN WITH (FORMAT text, DELIMITER E'\\t', NULL '')").format(
+                    Identifier(schema_nm),
+                    Identifier(tb_nm),
+                    SQL(', ').join(map(Identifier, col_nms)),
+                )
+                with cur.copy(sql) as copy:
+                    copy.write(data)
                 conn.commit()
                 self._verbose_print(f'Copied {df.shape[0]} rows into table {schema_nm}.{tb_nm}.')
                 return cur.rowcount
@@ -749,7 +772,7 @@ class PgsqlDF(Pgsql):
         schema_nm: str,
         tb_nm: str,
         col_nms: Sequence[str] | None = None,
-        where: Where | list[Where] | tuple[Where] | None = None,
+        where: Where | list[Where] | tuple[Where, ...] | None = None,
         order: Order | Sequence[Order] | None = None,
         limit: int | None = None,
         offset: int | None = None,

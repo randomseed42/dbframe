@@ -1,6 +1,6 @@
 import pandas as pd
 import pytest
-from psycopg2.errors import UniqueViolation
+from psycopg.errors import UniqueViolation
 from sqlalchemy import Boolean, Column, Float, Integer, String
 from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 
@@ -30,7 +30,7 @@ def pg():
 
 class TestPgsqlDatabase:
     def test_get_url(self, pg: PgsqlDF):
-        assert pg.get_url() == 'postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/test_db'
+        assert pg.get_url() == 'postgresql+psycopg://postgres:postgres@127.0.0.1:5432/test_db'
 
     def test_validate_conn(self, pg: PgsqlDF):
         assert pg.validate_conn()
