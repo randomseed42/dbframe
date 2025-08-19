@@ -433,7 +433,7 @@ class Sqlite:
         self,
         tb_nm: str,
         col_nms: Sequence[str] | None = None,
-        where: Where | list[Where] | tuple[Where] | None = None,
+        where: Where | list[Where] | tuple[Where, ...] | None = None,
         order: Order | Sequence[Order] | None = None,
         limit: int | None = None,
         offset: int | None = None,
@@ -464,7 +464,7 @@ class Sqlite:
             self._verbose_print(f'Selected {len(rows)} rows from table {tb_nm}.')
             return cols, rows
 
-    def update_rows(self, tb_nm: str, set_values: dict[str, Any], where: Where | list[Where] | tuple[Where] | None = None, **kwargs) -> int:
+    def update_rows(self, tb_nm: str, set_values: dict[str, Any], where: Where | list[Where] | tuple[Where, ...] | None = None, **kwargs) -> int:
         tb_nm = NameValidator.table(tb_nm)
         tb = self.get_table(tb_nm=tb_nm, **kwargs)
         _set_values = {}
@@ -481,7 +481,7 @@ class Sqlite:
             self._verbose_print(f'Updated {cur.rowcount} rows in table {tb_nm}.')
             return cur.rowcount
 
-    def delete_rows(self, tb_nm: str, where: Where | list[Where] | tuple[Where] | None = None, **kwargs) -> int:
+    def delete_rows(self, tb_nm: str, where: Where | list[Where] | tuple[Where, ...] | None = None, **kwargs) -> int:
         tb_nm = NameValidator.table(tb_nm)
         tb = self.get_table(tb_nm=tb_nm, **kwargs)
         where_cond = where_parser(where, cols=None, tb=tb)
@@ -584,7 +584,7 @@ class SqliteDF(Sqlite):
         self,
         tb_nm: str,
         col_nms: Sequence[str] | None = None,
-        where: Where | list[Where] | tuple[Where] | None = None,
+        where: Where | list[Where] | tuple[Where, ...] | None = None,
         order: Order | Sequence[Order] | None = None,
         limit: int | None = None,
         offset: int | None = None,
