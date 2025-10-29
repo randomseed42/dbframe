@@ -175,6 +175,7 @@ def _object_to_sql_dtype(obj: Any) -> TypeEngine[Any] | type[TypeEngine[Any]] | 
             return Integer
         if isinstance(obj, pd.CategoricalIndex):
             return String
+        return _object_to_sql_dtype(obj.to_series())
 
 
 def object_to_sql_dtype(obj: Any, dialect: Literal['sqlite', 'postgresql'] | None = None) -> TypeEngine[Any] | type[TypeEngine[Any]]:
@@ -269,7 +270,7 @@ def _df_to_unique_constraint(df: pd.DataFrame, tb_nm: str, unique_col_grp: str |
         if _unique_col_nm in unique_col_nms:
             raise ValueError(f'unique column {unique_col_nm} already in unique group.')
         unique_col_nms.append(_unique_col_nm)
-    unique_nm = 'uix_{}_{}'.format(tb_nm, '_'.join(unique_col_nms))[:62]
+    unique_nm = 'uq_{}_{}'.format(tb_nm, '_'.join(unique_col_nms))[:62]
     unique = UniqueConstraint(*unique_col_nms, name=unique_nm)
     return unique
 
