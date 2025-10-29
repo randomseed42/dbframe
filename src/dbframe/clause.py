@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import NamedTuple, Sequence, Any
 
 from sqlalchemy import Column, Table, and_, or_, true
@@ -10,7 +11,7 @@ from .validator import NameValidator
 class Where(NamedTuple):
     column_name: str
     operator: Operator
-    value: str | int | float | bool | Sequence | None
+    value: str | int | float | bool | datetime | Sequence | None
 
 
 def where_parser(
